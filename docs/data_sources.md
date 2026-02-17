@@ -4,10 +4,9 @@ This tool uses modular, in-repo sources for both video and log inputs. Each sour
 
 ## Video Sources
 
-### `gopro_gpmf` (built-in)
-- Parsed via `pygpmf-oz`.
-- The MP4 contains GPMF (GoPro Metadata Format) packets with sensor data.
-- The source extracts gyro and accelerometer samples and their timestamps.
+### `telemetry_parser` (built-in)
+- Parsed via `telemetry-parser`.
+- Extracts gyro and accelerometer data from supported camera files.
 - Timestamps are normalized so the first sample is at `time_s = 0.0`.
 
 **What we keep**
@@ -16,13 +15,7 @@ This tool uses modular, in-repo sources for both video and log inputs. Each sour
 - `time_s`: seconds from clip start.
 
 **Missing data**
-Some GoPro clips may lack gyro or accel. The tool falls back to whatever is available.
-
-### `dji_osmo_action` (built-in)
-- Extracts timed metadata from DJI Osmo Action MP4 files.
-- Currently decodes accelerometer data from the `djmd` metadata stream.
-- Requires `ffmpeg` and `ffprobe` on the PATH.
-- Notes: gyro data has not been validated yet. GPS extraction via `pyosmogps` (pure Python) is optional; `telemetry-parser` is out of scope due to its Rust dependency.
+Some clips may lack gyro or accel. The tool falls back to whatever is available.
 
 ## Log Sources
 

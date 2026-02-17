@@ -21,9 +21,11 @@ This document defines the minimum, standardized tests required for every source 
 - `sniff` positive: the plugin should score highly on a known-good video file for that source.
 - `sniff` negative: the plugin should score low on an unrelated MP4/MOV.
 - `load` smoke: loading a known-good file returns an `ImuBundle` with at least one IMU series.
+- `fps` detection: detect a non-zero frame rate from the video fixture (via ExifTool auto-detect).
 - `time` monotonic: returned `time_s` must be strictly increasing or non-decreasing.
 - `time` normalization: `time_s[0]` must be `0.0` (within a small tolerance).
 - `channels` presence: at least one of `gyro` or `accel` exists; otherwise, the plugin must raise a clear error.
+ - For telemetry-parser, use the GoPro and DJI fixtures to validate both brands.
 
 ## Required Tests: Cross-Source Integration
 - `signal` availability: `available_signals(log) & available_signals(video)` must be non-empty for at least one supported log/video pairing.
@@ -44,7 +46,7 @@ This document defines the minimum, standardized tests required for every source 
 - `tests/fixtures/gopro.mp4`
 - `tests/fixtures/gopro_imu_full.npz`
 - `tests/fixtures/racechrono.csv`
-- `tests/fixtures/dji.mov`
+- `tests/fixtures/dji.mp4`
 
 ## Performance Expectations
 - `sniff` should be fast and avoid full-file parsing.

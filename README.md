@@ -1,6 +1,6 @@
 ﻿# imu-video-sync
 
-Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. Built-in sources include GoPro MP4 (GPMF), DJI Osmo Action MP4 metadata (accel), AiM-style CSV logs, and RaceChrono CSV logs. The architecture is modular so additional in-repo sources can be added cleanly. It estimates the time offset by comparing motion patterns and prints a RaceRender-friendly offset instruction.
+Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. Built-in sources include telemetry-parser for cameras, plus AiM-style CSV logs and RaceChrono CSV logs. The architecture is modular so additional in-repo sources can be added cleanly. It estimates the time offset by comparing motion patterns and prints a RaceRender-friendly offset instruction.
 
 
 **Supported Devices**
@@ -15,9 +15,8 @@ Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) 
 
 **Quickstart**
 1. Install dependencies: `pip install -r requirements.txt`
-2. Install FFmpeg and ensure `ffmpeg` is on your PATH (required by `pygpmf-oz`).
-3. Optional for plotting: `pip install matplotlib`
-4. Run in a directory with exactly one `.mp4` and one `.csv`: `imu_video_sync` (otherwise pass `--video` and `--log`).
+2. Optional for plotting: `pip install matplotlib`
+3. Run in a directory with exactly one `.mp4` and one `.csv`: `imu_video_sync` (otherwise pass `--video` and `--log`).
 
 **Usage**
 ```
@@ -30,7 +29,7 @@ imu_video_sync --start 60 --window 240
 imu_video_sync --no-auto-window
 imu_video_sync --window-step 10
 imu_video_sync --log-time-col "Time" --log-gyro-cols "GyroX,GyroY,GyroZ"
-imu_video_sync --video-source dji_osmo_action --log-source racechrono_csv
+imu_video_sync --video-source telemetry_parser --log-source racechrono_csv
 imu_video_sync --write-video-imu-csv
 imu_video_sync --write-shifted-log
 imu_video_sync --plot
@@ -60,7 +59,7 @@ imu_video_sync --plot
   - Visual diagnostics: signals, correlation curve, and difference signal.
 
 **How It Works**
-1. Extract video IMU (gyro/accel) from MP4 using a source backend (GoPro GPMF via `pygpmf-oz`, DJI metadata for Osmo Action) and normalize timestamps to start at 0.0 seconds.
+1. Extract video IMU (gyro/accel) from MP4 using `telemetry-parser` and normalize timestamps to start at 0.0 seconds.
 2. Parse a log CSV (AiM-style or RaceChrono), detect delimiter and column names, and convert time to seconds-from-start.
 3. Choose a correlation signal (`gyroMag` by default; can compare multiple signals).
 4. Resample both signals to a uniform rate (default 50 Hz).
@@ -121,4 +120,4 @@ If values are "bad," try:
 - The shifted log CSV overwrites the time column with seconds-from-start values plus the computed lag.
 - Use `--video-source` or `--log-source` to force a specific backend by name.
 - RaceRender can only apply positive offsets. The tool prints which input to offset accordingly.
-- DJI metadata extraction requires `ffmpeg` and `ffprobe` on PATH.
+- Camera metadata extraction uses `telemetry-parser`.

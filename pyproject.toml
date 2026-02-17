@@ -12,8 +12,7 @@ license = {text = "MIT"}
 keywords = ["telemetry", "imu", "sync", "video", "camera", "logger"]
 authors = [{name = "Codex"}]
 dependencies = [
-  "pygpmf-oz>=0.3.0",
-  "ffmpeg-python",
+  "telemetry-parser>=0.3.0",
   "numpy",
   "pandas",
   "scipy",

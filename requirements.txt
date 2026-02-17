@@ -1,5 +1,4 @@
-﻿pygpmf-oz>=0.3.0
-ffmpeg-python
+telemetry-parser>=0.3.0
 numpy
 pandas
 scipy

@@ -1,6 +1,9 @@
 ﻿from __future__ import annotations
 
 import argparse
+import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -157,15 +160,63 @@ def _robust_std(values: np.ndarray) -> float:
     return 1.4826 * mad
 
 
-def _estimate_drift(start_s: np.ndarray, lag_s: np.ndarray) -> Optional[float]:
-    # Fit a simple slope of lag vs. time to estimate drift.
-    if start_s.size < 3:
+def _estimate_drift_info(
+    start_s: np.ndarray,
+    lag_s: np.ndarray,
+    min_windows: int,
+    min_span_s: float,
+    min_r2: float = 0.5,
+) -> Optional[dict]:
+    # Robust drift estimate (lag slope vs time) with reliability gating.
+    start_s = np.asarray(start_s, dtype=float)
+    lag_s = np.asarray(lag_s, dtype=float)
+
+    n = start_s.size
+    if n < min_windows:
         return None
-    try:
-        coeffs = np.polyfit(start_s, lag_s, 1)
-        return float(coeffs[0])
-    except Exception:
+
+    span = float(np.nanmax(start_s) - np.nanmin(start_s))
+    if not np.isfinite(span) or span < min_span_s:
         return None
+
+    slopes = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            dt = start_s[j] - start_s[i]
+            if dt == 0:
+                continue
+            slopes.append((lag_s[j] - lag_s[i]) / dt)
+    if not slopes:
+        return None
+
+    slope = float(np.median(slopes))
+    intercept = float(np.median(lag_s - slope * start_s))
+    pred = slope * start_s + intercept
+    resid = lag_s - pred
+    resid_mad = 1.4826 * float(np.median(np.abs(resid)))
+
+    sst = float(np.sum((lag_s - float(np.mean(lag_s))) ** 2))
+    sse = float(np.sum(resid ** 2))
+    r2 = 1.0 - (sse / sst) if sst > 1e-9 else 0.0
+
+    lag_spread = _robust_std(lag_s)
+    resid_thresh = max(0.05, 0.5 * lag_spread)
+    reliable = (
+        np.isfinite(slope)
+        and np.isfinite(r2)
+        and r2 >= min_r2
+        and np.isfinite(resid_mad)
+        and resid_mad <= resid_thresh
+    )
+
+    return {
+        "slope": slope,
+        "r2": r2,
+        "resid_mad": resid_mad,
+        "span_s": span,
+        "n": int(n),
+        "reliable": bool(reliable),
+    }
 
 
 def _compute_window_candidates(
@@ -347,7 +398,7 @@ def _compute_metrics(
             "video_y": video_norm,
             "start_s": start_s,
             "window_count": 1,
-            "drift_slope": None,
+            "drift": None,
         }
 
     start_idx_min = 0
@@ -388,8 +439,12 @@ def _compute_metrics(
     psr = float(np.median(psr_values)) if psr_values.size else float("nan")
     score = _score_metrics(peak, psr, stability_std)
 
-    drift_slope = _estimate_drift(
-        np.array([c["start_s"] for c in kept], dtype=float), lag_values
+    min_span_s = max(120.0, 0.2 * video_duration) if video_duration > 0 else 120.0
+    drift_info = _estimate_drift_info(
+        np.array([c["start_s"] for c in kept], dtype=float),
+        lag_values,
+        min_windows=6,
+        min_span_s=min_span_s,
     )
 
     best_start = best["start_s"]
@@ -421,26 +476,121 @@ def _compute_metrics(
         "video_y": video_seg,
         "start_s": best_start,
         "window_count": len(kept),
-        "drift_slope": drift_slope,
+        "drift": drift_info,
     }
 
 
-def _race_render_instruction(lag_seconds: float) -> str:
-    def _format_hhmmss_ms(value: float) -> str:
-        total_ms = int(round(abs(value) * 1000.0))
-        hours = total_ms // 3600000
-        rem = total_ms % 3600000
-        minutes = rem // 60000
-        rem = rem % 60000
-        seconds = rem // 1000
-        millis = rem % 1000
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"
+def _format_hhmmss_ms(value: float) -> str:
+    total_ms = int(round(abs(value) * 1000.0))
+    hours = total_ms // 3600000
+    rem = total_ms % 3600000
+    minutes = rem // 60000
+    rem = rem % 60000
+    seconds = rem // 1000
+    millis = rem % 1000
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"
 
+
+def _format_timecode(value: float, fps: Optional[float]) -> str:
+    if fps is None or fps <= 0:
+        return "n/a (fps unknown)"
+    sign = "+" if value >= 0 else "-"
+    total_s = abs(value)
+    whole_s = int(total_s)
+    frac_s = total_s - whole_s
+    frames = int(round(frac_s * fps))
+    nominal_fps = int(round(fps))
+    if nominal_fps <= 0:
+        return "n/a (fps unknown)"
+    if frames >= nominal_fps:
+        frames = 0
+        whole_s += 1
+    hours = whole_s // 3600
+    rem = whole_s % 3600
+    minutes = rem // 60
+    seconds = rem % 60
+    frame_width = max(2, len(str(nominal_fps - 1)))
+    return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d};{frames:0{frame_width}d}"
+
+
+def _format_lag_frames(value: float, fps: Optional[float]) -> str:
+    if fps is None or fps <= 0:
+        return "n/a (fps unknown)"
+    frames = int(round(value * fps))
+    return f"{frames:+d}"
+
+
+def _offset_summary_rows(lag_seconds: float, fps: Optional[float]) -> List[Tuple[str, str]]:
     if lag_seconds > 0:
-        return f"Video offset within project: {_format_hhmmss_ms(lag_seconds)}"
-    if lag_seconds < 0:
-        return f"Data offset within project: {_format_hhmmss_ms(lag_seconds)}"
-    return "Video offset within project: 00:00:00.000"
+        offset_label = "Video offset within project"
+    elif lag_seconds < 0:
+        offset_label = "Data offset within project"
+    else:
+        offset_label = "Video offset within project"
+    return [
+        ("Lag (seconds)", f"{lag_seconds:+.3f}"),
+        ("Lag (frames)", _format_lag_frames(lag_seconds, fps)),
+        ("Timecode offset", _format_timecode(lag_seconds, fps)),
+        (offset_label, _format_hhmmss_ms(lag_seconds)),
+    ]
+
+
+def _find_exiftool() -> Optional[Path]:
+    repo_root = Path(__file__).resolve().parents[2]
+    for rel in ("tools/exiftool.exe", "tools/exiftool(-k).exe"):
+        candidate = repo_root / rel
+        if candidate.exists():
+            return candidate
+    system_path = shutil.which("exiftool")
+    if system_path:
+        return Path(system_path)
+    return None
+
+
+def _detect_video_fps(video_path: Path) -> Optional[float]:
+    exiftool = _find_exiftool()
+    if exiftool is None:
+        return None
+    tags = [
+        "VideoFrameRate",
+        "PlaybackFrameRate",
+        "TrackFrameRate",
+        "AvgFrameRate",
+        "AverageFrameRate",
+        "VideoAvgFrameRate",
+        "FrameRate",
+        "MovieFrameRate",
+        "OriginalFrameRate",
+        "CaptureFrameRate",
+        "FPS",
+    ]
+    cmd = [str(exiftool), "-api", "largefilesupport=1", "-n", "-j"]
+    cmd += [f"-{tag}" for tag in tags]
+    cmd.append(str(video_path))
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not payload:
+        return None
+    row = payload[0]
+    for tag in tags:
+        value = row.get(tag)
+        if value is None:
+            continue
+        try:
+            fps = float(value)
+        except (TypeError, ValueError):
+            continue
+        if fps > 0:
+            return fps
+    return None
 
 
 def _format_columns(headers: List[str], rows: List[List[str]]) -> str:
@@ -556,6 +706,12 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     parser.add_argument("--video", help="Path to video file (MP4)")
     parser.add_argument("--log", help="Path to log file (CSV)")
+    parser.add_argument(
+        "--video-fps",
+        type=float,
+        default=None,
+        help="Video frame rate for timecode offset output (e.g., 29.97, 59.94, 60)",
+    )
     parser.add_argument("--video-source", help="Force video source by name")
     parser.add_argument("--log-source", help="Force log source by name")
     parser.add_argument(
@@ -590,6 +746,11 @@ def main(argv: Optional[List[str]] = None) -> None:
         default=20.0,
         help="Step size for auto-window scan (seconds).",
     )
+    parser.add_argument(
+        "--show-drift",
+        action="store_true",
+        help="Show drift estimate (can be noisy on short or low-activity clips).",
+    )
     parser.add_argument("--fs", type=float, default=50.0, help="Resample rate (Hz)")
     parser.add_argument("--lowpass-hz", type=float, default=8.0, help="Low-pass cutoff (Hz)")
     parser.add_argument("--highpass-hz", type=float, default=0.2, help="High-pass cutoff (Hz)")
@@ -606,6 +767,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     try:
         _status("Resolving input files...")
         video_path, log_path = _resolve_paths(args.video, args.log)
+        video_fps = args.video_fps if args.video_fps is not None else _detect_video_fps(video_path)
 
         video_opts = _parse_kv_args(args.video_opt)
         log_opts = _parse_kv_args(args.log_opt)
@@ -693,7 +855,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         peak = best["peak"]
         psr = best["psr"]
         stability_std = best["stability"]
-        drift_slope = best.get("drift_slope")
+        drift_info = best.get("drift")
         corr = best["corr"]
         lags = best["lags"]
 
@@ -703,19 +865,21 @@ def main(argv: Optional[List[str]] = None) -> None:
         conf_score = _confidence_score(peak, psr, stability_std)
         conf_label = _confidence_rating(conf_score)
         summary_rows = [
-            ("Lag (seconds)", f"{lag_seconds:+.3f}"),
             ("Correlation peak", f"{peak:.3f}"),
             ("Peak-to-sidelobe ratio", f"{psr:.3f}"),
             ("Stability (stddev s)", f"{stability_std:.3f}"),
             ("Confidence", f"{conf_label} ({conf_score:.0f}/100)"),
         ]
-        if drift_slope is not None and np.isfinite(drift_slope):
-            summary_rows.append(("Drift (s/s)", f"{drift_slope:+.6f}"))
+        if args.show_drift:
+            if drift_info and drift_info.get("reliable"):
+                summary_rows.append(("Drift (s/s)", f"{drift_info['slope']:+.6f}"))
+            else:
+                summary_rows.append(("Drift (s/s)", "n/a (insufficient reliability)"))
         print(_format_kv(summary_rows))
         print("")
-        print("RaceRender Offset")
+        print("Offset Summary")
         print(_color_line())
-        print(_race_render_instruction(lag_seconds))
+        print(_format_kv(_offset_summary_rows(lag_seconds, video_fps)))
         print("")
 
         if peak < 0.2:

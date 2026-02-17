@@ -7,7 +7,7 @@ import pytest
 from imu_video_sync.cli import _compute_metrics
 from imu_video_sync.core.models import ImuBundle, SourceMeta, TimeSeries
 from imu_video_sync.sources.aim_csv import load_aim_csv
-from imu_video_sync.sources.gopro_gpmf import extract_gopro_imu
+from imu_video_sync.sources.telemetry_parser_camera import extract_telemetry_imu
 
 
 def _env_path(var_name: str, default: Path) -> Path:
@@ -33,7 +33,7 @@ def _axis_names(values: np.ndarray) -> list[str]:
     return [f"a{i}" for i in range(n)]
 
 
-def test_gopro_metadata_extraction_smoke():
+def test_camera_metadata_extraction_smoke():
     mp4_path = _env_path(
         "IMU_SYNC_MP4_SMOKE",
         Path("tests/fixtures/gopro.mp4"),
@@ -41,7 +41,7 @@ def test_gopro_metadata_extraction_smoke():
     if not mp4_path.exists():
         pytest.skip(f"Missing MP4 smoke fixture: {mp4_path}")
 
-    imu = extract_gopro_imu(str(mp4_path))
+    imu = extract_telemetry_imu(mp4_path)
     has_gyro = imu.gyro is not None and imu.gyro.values.size > 0
     has_accel = imu.accel is not None and imu.accel.values.size > 0
     assert has_gyro or has_accel
