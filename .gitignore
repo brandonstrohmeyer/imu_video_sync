@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Test/coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Local runtime artifacts
+.joblib/
+.tmp/
+gopro_imu.csv
+aim_shifted.csv
+sync_plot.png
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp

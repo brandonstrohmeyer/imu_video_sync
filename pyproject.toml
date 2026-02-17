@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imu-video-sync"
+version = "0.1.0"
+description = "Sync telemetry logs to camera video using IMU cross-correlation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["telemetry", "imu", "sync", "video", "camera", "logger"]
+authors = [{name = "Codex"}]
+dependencies = [
+  "pygpmf-oz>=0.3.0",
+  "ffmpeg-python",
+  "numpy",
+  "pandas",
+  "scipy",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib"]
+dev = ["pytest"]
+
+[project.scripts]
+imu_video_sync = "imu_video_sync.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

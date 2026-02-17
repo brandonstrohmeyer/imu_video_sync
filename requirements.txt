@@ -1,0 +1,6 @@
+﻿pygpmf-oz>=0.3.0
+ffmpeg-python
+numpy
+pandas
+scipy
+pytest
