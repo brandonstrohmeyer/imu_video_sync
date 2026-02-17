@@ -35,3 +35,7 @@ Example: 20 minutes of data, 6 minute window, 20 second step:
 - PSR (peak-to-sidelobe ratio): main peak divided by the next-best local peak (higher is better).
 - Stability (stddev s): how much the lag varies across top windows (lower is better).
 - Drift (s/s): trend in lag over time (close to 0 is best).
+- Confidence rating: a High/Medium/Low label plus a 0-100 score derived from peak, PSR, and stability.
+
+Notes:
+- Stability may be reported as `nan` if the aligned video window does not fully fit in the video timeline (for example, when the window equals the clip length).

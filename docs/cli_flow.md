@@ -16,6 +16,8 @@ The CLI is in `src/imu_video_sync/cli.py`.
 - Use `--no-auto-window` to analyze a single window.
 - `--window` sets the window length (default 360 seconds).
 - `--window-step` controls how far each window shifts (default 20 seconds).
+- If the requested window is longer than the available data, it is automatically shrunk.
+- If the window is effectively the full video length, auto-windowing is disabled and the tool falls back to single-window mode.
 
 ## Window count estimate
 For a session of length `T`, window length `W`, and step `S`, window count is roughly:

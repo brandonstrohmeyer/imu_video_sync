@@ -111,6 +111,26 @@ def _score_metrics(peak: float, psr: float, stability: float) -> float:
     return float(peak) * float(psr_val) / (1.0 + float(stab_val))
 
 
+def _confidence_score(peak: float, psr: float, stability: float) -> float:
+    if not np.isfinite(peak):
+        return 0.0
+    peak_score = float(np.clip(peak, 0.0, 1.0))
+    psr_score = float(np.clip(psr / 3.0, 0.0, 1.0)) if np.isfinite(psr) else 0.0
+    if np.isfinite(stability):
+        stability_score = float(np.clip(1.0 - (stability / 0.3), 0.0, 1.0))
+    else:
+        stability_score = 0.5
+    return 100.0 * (0.5 * peak_score + 0.3 * psr_score + 0.2 * stability_score)
+
+
+def _confidence_rating(score: float) -> str:
+    if score >= 75.0:
+        return "High"
+    if score >= 55.0:
+        return "Medium"
+    return "Low"
+
+
 def _weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
     # Robust median that respects per-window weights.
     values = np.asarray(values, dtype=float)
@@ -256,6 +276,26 @@ def _compute_metrics(
     # Resample both signals to a common uniform rate.
     log_t_full, log_y_full = resample_uniform(log_time, log_signal, fs)
     video_t_full, video_y_full = resample_uniform(video_time, video_signal, fs)
+
+    # Auto-shrink window if it exceeds available data.
+    log_duration = float(log_t_full[-1] - log_t_full[0])
+    video_duration = float(video_t_full[-1] - video_t_full[0])
+    max_window = min(log_duration, video_duration)
+    if max_window <= 0:
+        raise ValueError("Not enough data to compute a correlation window.")
+    if window_s > max_window:
+        new_window = max(1.0, max_window)
+        print(
+            f"Warning: Window {window_s:.1f}s exceeds available data. "
+            f"Shrinking to {new_window:.1f}s."
+        )
+        window_s = new_window
+    if auto_window and window_s >= 0.99 * video_duration:
+        print(
+            "Warning: Auto-window disabled because the window length "
+            "nearly equals the video duration."
+        )
+        auto_window = False
 
     # Filter and normalize to emphasize comparable motion.
     log_filt = filter_signal(log_y_full, fs, lowpass_hz, highpass_hz)
@@ -660,11 +700,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         print("")
         print("Sync Summary")
         print(_color_line())
+        conf_score = _confidence_score(peak, psr, stability_std)
+        conf_label = _confidence_rating(conf_score)
         summary_rows = [
             ("Lag (seconds)", f"{lag_seconds:+.3f}"),
             ("Correlation peak", f"{peak:.3f}"),
             ("Peak-to-sidelobe ratio", f"{psr:.3f}"),
             ("Stability (stddev s)", f"{stability_std:.3f}"),
+            ("Confidence", f"{conf_label} ({conf_score:.0f}/100)"),
         ]
         if drift_slope is not None and np.isfinite(drift_slope):
             summary_rows.append(("Drift (s/s)", f"{drift_slope:+.6f}"))
