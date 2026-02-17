@@ -5,28 +5,40 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
-from .aim_csv import AimData, load_aim_csv
-from .gopro_extract import GoproIMU, extract_gopro_imu
+
+from .core.models import ImuBundle, LogData
+from .core.signals import SIGNAL_PRIORITY, available_signals, choose_signal, derive_signal
+from .correlate import estimate_lag, lag_stability, peak_to_sidelobe
+from .io_out import write_imu_csv, write_shifted_log
 from .preprocess import (
     filter_signal,
     infer_sample_rate,
     normalize_signal,
-    preprocess_signal,
     resample_uniform,
     select_active_window,
     trim_window,
 )
-from .correlate import estimate_lag, lag_stability, peak_to_sidelobe
-from .io_out import write_gopro_csv, write_shifted_csv
-
-
-SIGNAL_PRIORITY = ["gyroMag", "yawRate", "latAcc", "accMag", "gyroZ"]
+from .sources import resolve_source
 
 
 def _parse_cols(value: Optional[str]) -> Optional[List[str]]:
     if value is None:
         return None
     return [col.strip() for col in value.split(",") if col.strip()]
+
+
+def _parse_kv_args(values: List[str]) -> dict:
+    opts: dict = {}
+    for item in values or []:
+        if "=" not in item:
+            raise ValueError(f"Invalid option '{item}'. Expected key=value.")
+        key, val = item.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if not key:
+            raise ValueError(f"Invalid option '{item}'. Key is required.")
+        opts[key] = val
+    return opts
 
 
 def _autodetect_file(ext: str) -> Optional[Path]:
@@ -37,111 +49,28 @@ def _autodetect_file(ext: str) -> Optional[Path]:
     return None
 
 
-def _resolve_paths(mp4_arg: Optional[str], csv_arg: Optional[str]) -> tuple[Path, Path]:
-    # Prefer explicit paths, otherwise auto-detect.
-    mp4_path = Path(mp4_arg) if mp4_arg else _autodetect_file(".mp4")
-    csv_path = Path(csv_arg) if csv_arg else _autodetect_file(".csv")
+def _resolve_paths(video_arg: Optional[str], log_arg: Optional[str]) -> tuple[Path, Path]:
+    # Prefer explicit paths, otherwise auto-detect by extension.
+    video_path = Path(video_arg) if video_arg else _autodetect_file(".mp4")
+    log_path = Path(log_arg) if log_arg else _autodetect_file(".csv")
 
-    if mp4_path is None or csv_path is None:
+    if video_path is None or log_path is None:
         raise ValueError(
-            "Auto-detect failed. Provide --mp4 and --csv when there is not exactly one .mp4 and one .csv in the directory."
+            "Auto-detect failed. Provide --video and --log when there is not exactly one .mp4 and one .csv in the directory."
         )
-    if not mp4_path.exists():
-        raise ValueError(f"MP4 not found: {mp4_path}")
-    if not csv_path.exists():
-        raise ValueError(f"CSV not found: {csv_path}")
-    return mp4_path, csv_path
+    if not video_path.exists():
+        raise ValueError(f"Video not found: {video_path}")
+    if not log_path.exists():
+        raise ValueError(f"Log not found: {log_path}")
+    return video_path, log_path
 
 
-def _available_signals_aim(aim: AimData) -> set[str]:
-    # Determine which signals can be derived from AiM data.
-    available = set()
-    if aim.gyro is not None and aim.gyro.size:
-        available.update(["gyroMag", "gyroZ", "yawRate"])
-    if aim.accel is not None and aim.accel.size:
-        available.add("accMag")
-    if aim.special_cols.get("lat_acc"):
-        available.add("latAcc")
-    if aim.special_cols.get("yaw_rate"):
-        available.add("yawRate")
-    return available
-
-
-def _available_signals_gopro(gopro: GoproIMU) -> set[str]:
-    # Determine which signals can be derived from GoPro data.
-    available = set()
-    if gopro.gyro is not None and gopro.gyro.size:
-        available.update(["gyroMag", "gyroZ", "yawRate"])
-    if gopro.accel is not None and gopro.accel.size:
-        available.add("accMag")
-    return available
-
-
-def _choose_signal(requested: str, aim: AimData, gopro: GoproIMU) -> tuple[str, Optional[str]]:
-    # Pick the best available signal, with fallback and warning.
-    available_aim = _available_signals_aim(aim)
-    available_gopro = _available_signals_gopro(gopro)
-
-    if requested in available_aim and requested in available_gopro:
-        return requested, None
-
-    for candidate in SIGNAL_PRIORITY:
-        if candidate in available_aim and candidate in available_gopro:
-            return candidate, f"Requested {requested} not available in both files. Using {candidate} instead."
-
-    raise ValueError("No compatible signal found between AiM and GoPro data.")
-
-
-def _signal_from_aim(aim: AimData, signal: str) -> np.ndarray:
-    # Map a signal name to an AiM value series.
-    if signal == "gyroMag":
-        if aim.gyro is None:
-            raise ValueError("AiM gyro channels not available.")
-        if aim.gyro.shape[1] == 1:
-            return np.abs(aim.gyro[:, 0])
-        return np.linalg.norm(aim.gyro, axis=1)
-    if signal == "accMag":
-        if aim.accel is None:
-            raise ValueError("AiM accel channels not available.")
-        if aim.accel.shape[1] == 1:
-            return np.abs(aim.accel[:, 0])
-        return np.linalg.norm(aim.accel, axis=1)
-    if signal == "gyroZ":
-        if aim.gyro is None:
-            raise ValueError("AiM gyro channels not available.")
-        return aim.gyro[:, -1]
-    if signal == "yawRate":
-        col = aim.special_cols.get("yaw_rate")
-        if col and col in aim.df.columns:
-            return aim.df[col].to_numpy(dtype=float)
-        if aim.gyro is None:
-            raise ValueError("AiM yaw rate not available.")
-        return aim.gyro[:, -1]
-    if signal == "latAcc":
-        col = aim.special_cols.get("lat_acc")
-        if col and col in aim.df.columns:
-            return aim.df[col].to_numpy(dtype=float)
-        if aim.accel is None:
-            raise ValueError("AiM lateral accel not available.")
-        return aim.accel[:, -1]
-    raise ValueError(f"Unsupported signal type: {signal}")
-
-
-def _signal_from_gopro(gopro: GoproIMU, signal: str) -> Tuple[np.ndarray, np.ndarray]:
-    # Map a signal name to a GoPro time series.
-    if signal == "gyroMag":
-        if gopro.gyro is None or gopro.gyro_time_s is None:
-            raise ValueError("GoPro gyro not available.")
-        return gopro.gyro_time_s, np.linalg.norm(gopro.gyro, axis=1)
-    if signal == "accMag":
-        if gopro.accel is None or gopro.accel_time_s is None:
-            raise ValueError("GoPro accel not available.")
-        return gopro.accel_time_s, np.linalg.norm(gopro.accel, axis=1)
-    if signal in ("gyroZ", "yawRate"):
-        if gopro.gyro is None or gopro.gyro_time_s is None:
-            raise ValueError("GoPro gyro not available.")
-        return gopro.gyro_time_s, gopro.gyro[:, -1]
-    raise ValueError(f"Unsupported signal type for GoPro: {signal}")
+def _describe_derived(derived) -> str:
+    base = derived.derived_from.replace("_", " ")
+    if derived.axes:
+        axes = ", ".join(derived.axes)
+        return f"{base} ({axes})"
+    return base
 
 
 def _format_rate(rate: float) -> str:
@@ -158,11 +87,11 @@ def _drop_nan(time_s: np.ndarray, values: np.ndarray) -> Tuple[np.ndarray, np.nd
     return time_s[mask], values[mask]
 
 
-def _clamp_start(start_s: float, aim_t: np.ndarray, gopro_t: np.ndarray, window_s: float) -> float:
+def _clamp_start(start_s: float, log_t: np.ndarray, video_t: np.ndarray, window_s: float) -> float:
     # Clamp start time to the shared overlap region.
     if start_s < 0:
         raise ValueError("Start time must be >= 0 seconds.")
-    latest_start = min(aim_t[-1], gopro_t[-1]) - window_s
+    latest_start = min(log_t[-1], video_t[-1]) - window_s
     if latest_start < 0:
         raise ValueError("Analysis window is longer than available data.")
     if start_s > latest_start:
@@ -220,30 +149,30 @@ def _estimate_drift(start_s: np.ndarray, lag_s: np.ndarray) -> Optional[float]:
 
 
 def _compute_window_candidates(
-    aim_t_full: np.ndarray,
-    aim_filt: np.ndarray,
-    gopro_norm: np.ndarray,
+    log_t_full: np.ndarray,
+    log_filt: np.ndarray,
+    video_norm: np.ndarray,
     fs: float,
     window_s: float,
     step_s: float,
     max_lag_s: float,
     start_idx_min: int,
-    gopro_duration: float,
+    video_duration: float,
     var_threshold_ratio: float = 0.2,
 ) -> tuple[list[dict], Optional[dict]]:
     win_n = int(round(window_s * fs))
-    if win_n <= 1 or aim_filt.size < win_n:
+    if win_n <= 1 or log_filt.size < win_n:
         return [], None
 
     step_n = max(1, int(round(step_s * fs)))
     var_list = []
     starts = []
     start_idx_min = max(0, start_idx_min)
-    # Slide a window across AiM data and score by variance (activity proxy).
-    for idx in range(start_idx_min, aim_filt.size - win_n + 1, step_n):
-        window = aim_filt[idx : idx + win_n]
+    # Slide a window across log data and score by variance (activity proxy).
+    for idx in range(start_idx_min, log_filt.size - win_n + 1, step_n):
+        window = log_filt[idx : idx + win_n]
         var_list.append(float(np.var(window)))
-        starts.append(float(aim_t_full[idx]))
+        starts.append(float(log_t_full[idx]))
 
     if not starts:
         return [], None
@@ -254,25 +183,25 @@ def _compute_window_candidates(
     candidates: list[dict] = []
     best: Optional[dict] = None
 
-    # For each active window, estimate a lag against the full GoPro signal.
+    # For each active window, estimate a lag against the full video signal.
     for idx, start_s in enumerate(starts):
         var_val = var_list[idx]
         if var_val < threshold:
             continue
-        start_idx = int(np.searchsorted(aim_t_full, start_s, side="left"))
-        aim_seg = aim_filt[start_idx : start_idx + win_n]
-        if aim_seg.size < win_n:
+        start_idx = int(np.searchsorted(log_t_full, start_s, side="left"))
+        log_seg = log_filt[start_idx : start_idx + win_n]
+        if log_seg.size < win_n:
             continue
         try:
-            aim_norm = normalize_signal(aim_seg)
+            log_norm = normalize_signal(log_seg)
         except Exception:
             continue
 
-        lag_local, peak, corr, lags = estimate_lag(aim_norm, gopro_norm, fs, max_lag_s)
-        gopro_start = lag_local
-        if gopro_start < 0:
+        lag_local, peak, corr, lags = estimate_lag(log_norm, video_norm, fs, max_lag_s)
+        video_start = lag_local
+        if video_start < 0:
             continue
-        if gopro_start + window_s > gopro_duration:
+        if video_start + window_s > video_duration:
             continue
 
         psr = peak_to_sidelobe(corr, lags, fs)
@@ -294,15 +223,15 @@ def _compute_window_candidates(
                 **cand,
                 "corr": corr,
                 "lags": lags,
-                "aim_seg": aim_norm,
+                "log_seg": log_norm,
             }
 
     return candidates, best
 
 
 def _compute_metrics(
-    aim: AimData,
-    gopro: GoproIMU,
+    log: LogData,
+    video: ImuBundle,
     signal: str,
     fs: float,
     window_s: float,
@@ -314,51 +243,51 @@ def _compute_metrics(
     window_step_s: float,
 ) -> dict:
     # Build comparable signals for this requested signal type.
-    aim_signal = _signal_from_aim(aim, signal)
-    gopro_time, gopro_signal = _signal_from_gopro(gopro, signal)
+    log_sig = derive_signal(log.imu, signal)
+    video_sig = derive_signal(video, signal)
 
-    aim_time, aim_signal = _drop_nan(aim.time_s, aim_signal)
-    gopro_time, gopro_signal = _drop_nan(gopro_time, gopro_signal)
+    log_time, log_signal = _drop_nan(log_sig.time_s, log_sig.values)
+    video_time, video_signal = _drop_nan(video_sig.time_s, video_sig.values)
 
     # Estimate source sample rates for reporting only.
-    aim_rate = infer_sample_rate(aim_time)
-    gopro_rate = infer_sample_rate(gopro_time)
+    log_rate = infer_sample_rate(log_time)
+    video_rate = infer_sample_rate(video_time)
 
     # Resample both signals to a common uniform rate.
-    aim_t_full, aim_y_full = resample_uniform(aim_time, aim_signal, fs)
-    gopro_t_full, gopro_y_full = resample_uniform(gopro_time, gopro_signal, fs)
+    log_t_full, log_y_full = resample_uniform(log_time, log_signal, fs)
+    video_t_full, video_y_full = resample_uniform(video_time, video_signal, fs)
 
     # Filter and normalize to emphasize comparable motion.
-    aim_filt = filter_signal(aim_y_full, fs, lowpass_hz, highpass_hz)
-    gopro_filt = filter_signal(gopro_y_full, fs, lowpass_hz, highpass_hz)
-    gopro_norm = normalize_signal(gopro_filt)
+    log_filt = filter_signal(log_y_full, fs, lowpass_hz, highpass_hz)
+    video_filt = filter_signal(video_y_full, fs, lowpass_hz, highpass_hz)
+    video_norm = normalize_signal(video_filt)
 
     win_n = int(round(window_s * fs))
-    gopro_duration = float(gopro_t_full[-1]) if gopro_t_full.size else 0.0
+    video_duration = float(video_t_full[-1]) if video_t_full.size else 0.0
 
     if not auto_window:
         # Single-window mode (manual or first active window).
         if start_override is None:
-            start_s = select_active_window(aim_t_full, aim_y_full, window_s, fs)
+            start_s = select_active_window(log_t_full, log_y_full, window_s, fs)
         else:
             start_s = float(start_override)
-        start_s = _clamp_start(start_s, aim_t_full, gopro_t_full, window_s)
-        aim_t, aim_y = trim_window(aim_t_full, aim_filt, start_s, window_s, fs)
-        aim_norm = normalize_signal(aim_y)
+        start_s = _clamp_start(start_s, log_t_full, video_t_full, window_s)
+        log_t, log_y = trim_window(log_t_full, log_filt, start_s, window_s, fs)
+        log_norm = normalize_signal(log_y)
 
-        lag_local, peak, corr, lags = estimate_lag(aim_norm, gopro_norm, fs, max_lag_s)
+        lag_local, peak, corr, lags = estimate_lag(log_norm, video_norm, fs, max_lag_s)
         lag_seconds = start_s - lag_local
         psr = peak_to_sidelobe(corr, lags, fs)
 
         stability_std = float("nan")
-        gopro_start = lag_local
-        if gopro_start >= 0 and gopro_start + window_s <= gopro_duration:
-            _, gopro_aligned = trim_window(
-                gopro_t_full, gopro_filt, gopro_start, window_s, fs
+        video_start = lag_local
+        if video_start >= 0 and video_start + window_s <= video_duration:
+            _, video_aligned = trim_window(
+                video_t_full, video_filt, video_start, window_s, fs
             )
-            gopro_aligned = normalize_signal(gopro_aligned)
+            video_aligned = normalize_signal(video_aligned)
             stability_lag_s = min(30.0, max_lag_s)
-            _, stability_std = lag_stability(aim_norm, gopro_aligned, fs, stability_lag_s)
+            _, stability_std = lag_stability(log_norm, video_aligned, fs, stability_lag_s)
 
         score = _score_metrics(peak, psr, stability_std)
 
@@ -369,13 +298,13 @@ def _compute_metrics(
             "psr": psr,
             "stability": stability_std,
             "score": score,
-            "aim_rate": aim_rate,
-            "gopro_rate": gopro_rate,
+            "log_rate": log_rate,
+            "video_rate": video_rate,
             "corr": corr,
             "lags": lags,
-            "aim_t": aim_t,
-            "aim_y": aim_norm,
-            "gopro_y": gopro_norm,
+            "log_t": log_t,
+            "log_y": log_norm,
+            "video_y": video_norm,
             "start_s": start_s,
             "window_count": 1,
             "drift_slope": None,
@@ -387,15 +316,15 @@ def _compute_metrics(
 
     # Auto-window mode: scan windows and build a consensus lag.
     candidates, best = _compute_window_candidates(
-        aim_t_full,
-        aim_filt,
-        gopro_norm,
+        log_t_full,
+        log_filt,
+        video_norm,
         fs,
         window_s,
         window_step_s,
         max_lag_s,
         start_idx_min,
-        gopro_duration,
+        video_duration,
     )
 
     if not candidates or best is None:
@@ -424,17 +353,17 @@ def _compute_metrics(
     )
 
     best_start = best["start_s"]
-    start_idx = int(np.searchsorted(aim_t_full, best_start, side="left"))
-    aim_seg = aim_filt[start_idx : start_idx + win_n]
-    aim_seg = normalize_signal(aim_seg)
-    gopro_start = best["lag_local"]
-    if gopro_start >= 0 and gopro_start + window_s <= gopro_duration:
-        _, gopro_seg = trim_window(
-            gopro_t_full, gopro_filt, gopro_start, window_s, fs
+    start_idx = int(np.searchsorted(log_t_full, best_start, side="left"))
+    log_seg = log_filt[start_idx : start_idx + win_n]
+    log_seg = normalize_signal(log_seg)
+    video_start = best["lag_local"]
+    if video_start >= 0 and video_start + window_s <= video_duration:
+        _, video_seg = trim_window(
+            video_t_full, video_filt, video_start, window_s, fs
         )
-        gopro_seg = normalize_signal(gopro_seg)
+        video_seg = normalize_signal(video_seg)
     else:
-        gopro_seg = gopro_norm[: win_n]
+        video_seg = video_norm[: win_n]
 
     return {
         "signal": signal,
@@ -443,13 +372,13 @@ def _compute_metrics(
         "psr": psr,
         "stability": stability_std,
         "score": score,
-        "aim_rate": aim_rate,
-        "gopro_rate": gopro_rate,
+        "log_rate": log_rate,
+        "video_rate": video_rate,
         "corr": best["corr"],
         "lags": best["lags"],
-        "aim_t": aim_t_full[start_idx : start_idx + win_n],
-        "aim_y": aim_seg,
-        "gopro_y": gopro_seg,
+        "log_t": log_t_full[start_idx : start_idx + win_n],
+        "log_y": log_seg,
+        "video_y": video_seg,
         "start_s": best_start,
         "window_count": len(kept),
         "drift_slope": drift_slope,
@@ -523,73 +452,34 @@ def _format_kv(rows: List[Tuple[str, str]]) -> str:
     return "\n".join(f"{key.ljust(width)}\t{value}" for key, value in rows)
 
 
-def _describe_signal_source_aim(aim: AimData, signal: str) -> str:
-    if signal == "gyroMag":
-        if aim.gyro_cols:
-            return ", ".join(aim.gyro_cols)
-        return "n/a"
-    if signal == "accMag":
-        if aim.acc_cols:
-            return ", ".join(aim.acc_cols)
-        return "n/a"
-    if signal == "gyroZ":
-        if aim.gyro_cols:
-            return aim.gyro_cols[-1]
-        return "n/a"
-    if signal == "yawRate":
-        col = aim.special_cols.get("yaw_rate")
-        if col and col in aim.df.columns:
-            return col
-        if aim.gyro_cols:
-            return aim.gyro_cols[-1]
-        return "n/a"
-    if signal == "latAcc":
-        col = aim.special_cols.get("lat_acc")
-        if col and col in aim.df.columns:
-            return col
-        if aim.acc_cols:
-            return aim.acc_cols[-1]
-        return "n/a"
-    return "n/a"
-
-
-def _describe_signal_source_gopro(signal: str) -> str:
-    if signal == "gyroMag":
-        return "GYRO x/y/z"
-    if signal == "accMag":
-        return "ACCL x/y/z"
-    if signal == "gyroZ":
-        return "GYRO z"
-    if signal == "yawRate":
-        return "GYRO z"
-    return "n/a"
-
-
 def _format_signal_selection(
-    aim: AimData,
+    log: LogData,
+    video: ImuBundle,
     signal: str,
-    aim_rate: float,
-    gopro_rate: float,
+    log_rate: float,
+    video_rate: float,
 ) -> str:
     headers = ["source", "signal", "derived_from", "sample_rate"]
+    log_sig = derive_signal(log.imu, signal)
+    video_sig = derive_signal(video, signal)
     rows = [
         [
-            "GoPro",
+            "Video",
             signal,
-            _describe_signal_source_gopro(signal),
-            _format_rate(gopro_rate),
+            _describe_derived(video_sig),
+            _format_rate(video_rate),
         ],
         [
-            "AiM",
+            "Log",
             signal,
-            _describe_signal_source_aim(aim, signal),
-            _format_rate(aim_rate),
+            _describe_derived(log_sig),
+            _format_rate(log_rate),
         ],
     ]
     return _format_columns(headers, rows)
 
 
-def _save_plot(time_s: np.ndarray, aim: np.ndarray, gopro: np.ndarray, corr, lags, fs: float) -> None:
+def _save_plot(time_s: np.ndarray, log: np.ndarray, video: np.ndarray, corr, lags, fs: float) -> None:
     # Optional diagnostics plot for visual inspection.
     try:
         import matplotlib.pyplot as plt
@@ -597,8 +487,8 @@ def _save_plot(time_s: np.ndarray, aim: np.ndarray, gopro: np.ndarray, corr, lag
         raise RuntimeError("Plotting requested but matplotlib is not installed.") from exc
 
     fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=False)
-    axes[0].plot(time_s, aim, label="AiM", linewidth=1.0)
-    axes[0].plot(time_s, gopro, label="GoPro", linewidth=1.0, alpha=0.8)
+    axes[0].plot(time_s, log, label="Log", linewidth=1.0)
+    axes[0].plot(time_s, video, label="Video", linewidth=1.0, alpha=0.8)
     axes[0].set_title("Preprocessed Signals")
     axes[0].set_xlabel("Time (s)")
     axes[0].set_ylabel("Amplitude")
@@ -609,8 +499,8 @@ def _save_plot(time_s: np.ndarray, aim: np.ndarray, gopro: np.ndarray, corr, lag
     axes[1].set_xlabel("Lag (s)")
     axes[1].set_ylabel("Correlation")
 
-    axes[2].plot(time_s, aim - gopro, color="tab:orange", linewidth=1.0)
-    axes[2].set_title("Signal Difference (AiM - GoPro)")
+    axes[2].plot(time_s, log - video, color="tab:orange", linewidth=1.0)
+    axes[2].set_title("Signal Difference (Log - Video)")
     axes[2].set_xlabel("Time (s)")
     axes[2].set_ylabel("Amplitude")
 
@@ -620,12 +510,26 @@ def _save_plot(time_s: np.ndarray, aim: np.ndarray, gopro: np.ndarray, corr, lag
 
 def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Sync AiM CSV logs to GoPro MP4 video using IMU cross-correlation.",
+        description="Sync telemetry logs to camera video using IMU cross-correlation.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    parser.add_argument("--mp4", help="Path to GoPro MP4 file")
-    parser.add_argument("--csv", help="Path to AiM CSV file")
+    parser.add_argument("--video", help="Path to video file (MP4)")
+    parser.add_argument("--log", help="Path to log file (CSV)")
+    parser.add_argument("--video-source", help="Force video source by name")
+    parser.add_argument("--log-source", help="Force log source by name")
+    parser.add_argument(
+        "--video-opt",
+        action="append",
+        default=[],
+        help="Video source option key=value (repeatable).",
+    )
+    parser.add_argument(
+        "--log-opt",
+        action="append",
+        default=[],
+        help="Log source option key=value (repeatable).",
+    )
     parser.add_argument("--signal", default="gyroMag", help="Signal to use for correlation")
     parser.add_argument(
         "--signals",
@@ -649,11 +553,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--fs", type=float, default=50.0, help="Resample rate (Hz)")
     parser.add_argument("--lowpass-hz", type=float, default=8.0, help="Low-pass cutoff (Hz)")
     parser.add_argument("--highpass-hz", type=float, default=0.2, help="High-pass cutoff (Hz)")
-    parser.add_argument("--aim-time-col", help="Override AiM time column name")
-    parser.add_argument("--aim-gyro-cols", help="Comma-separated AiM gyro column names")
-    parser.add_argument("--aim-acc-cols", help="Comma-separated AiM accel column names")
-    parser.add_argument("--write-gopro-csv", action="store_true", help="Write gopro_imu.csv")
-    parser.add_argument("--write-shifted-csv", action="store_true", help="Write aim_shifted.csv")
+    parser.add_argument("--log-time-col", help="Override log time column name")
+    parser.add_argument("--log-gyro-cols", help="Comma-separated log gyro column names")
+    parser.add_argument("--log-acc-cols", help="Comma-separated log accel column names")
+    parser.add_argument("--write-video-imu-csv", action="store_true", help="Write video_imu.csv")
+    parser.add_argument("--write-shifted-log", action="store_true", help="Write log_shifted.csv")
     parser.add_argument("--plot", action="store_true", help="Save diagnostic plot to sync_plot.png")
     parser.set_defaults(auto_window=True)
 
@@ -661,23 +565,32 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     try:
         _status("Resolving input files...")
-        mp4_path, csv_path = _resolve_paths(args.mp4, args.csv)
-        _status(f"Loading AiM CSV: {csv_path.name}")
-        aim = load_aim_csv(
-            csv_path,
-            time_col=args.aim_time_col,
-            gyro_cols=_parse_cols(args.aim_gyro_cols),
-            acc_cols=_parse_cols(args.aim_acc_cols),
-        )
-        _status(f"Extracting GoPro IMU: {mp4_path.name} (this can take a while)")
-        gopro = extract_gopro_imu(mp4_path)
+        video_path, log_path = _resolve_paths(args.video, args.log)
+
+        video_opts = _parse_kv_args(args.video_opt)
+        log_opts = _parse_kv_args(args.log_opt)
+        if args.log_time_col:
+            log_opts["time_col"] = args.log_time_col
+        if args.log_gyro_cols:
+            log_opts["gyro_cols"] = _parse_cols(args.log_gyro_cols)
+        if args.log_acc_cols:
+            log_opts["acc_cols"] = _parse_cols(args.log_acc_cols)
+
+        video_source = resolve_source("video", video_path, forced=args.video_source)
+        log_source = resolve_source("log", log_path, forced=args.log_source)
+
+        _status(f"Loading log: {log_path.name} ({log_source.name})")
+        log = log_source.load(log_path, **log_opts)
+
+        _status(f"Loading video IMU: {video_path.name} ({video_source.name}) (this can take a while)")
+        video = video_source.load(video_path, **video_opts)
 
         available = sorted(
-            _available_signals_aim(aim) & _available_signals_gopro(gopro),
+            available_signals(log.imu) & available_signals(video),
             key=lambda s: SIGNAL_PRIORITY.index(s) if s in SIGNAL_PRIORITY else 99,
         )
         if not available:
-            raise ValueError("No compatible signals found between AiM and GoPro data.")
+            raise ValueError("No compatible signals found between log and video data.")
 
         selected_signals: List[str]
         if args.signals:
@@ -693,7 +606,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         elif args.signal.lower() in ("auto", "all"):
             selected_signals = available
         else:
-            signal, warning = _choose_signal(args.signal, aim, gopro)
+            signal, warning = choose_signal(args.signal, log.imu, video)
             if warning:
                 print(f"Warning: {warning}")
             selected_signals = [signal]
@@ -703,8 +616,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         for sig in selected_signals:
             _status(f"Computing correlation metrics for signal: {sig}")
             metrics = _compute_metrics(
-                aim=aim,
-                gopro=gopro,
+                log=log,
+                video=video,
                 signal=sig,
                 fs=args.fs,
                 window_s=args.window,
@@ -722,13 +635,13 @@ def main(argv: Optional[List[str]] = None) -> None:
         if best is None:
             raise ValueError("Failed to compute lag for selected signals.")
 
-        aim_rate = best["aim_rate"]
-        gopro_rate = best["gopro_rate"]
+        log_rate = best["log_rate"]
+        video_rate = best["video_rate"]
 
         print("")
         print("Signal Selection")
         print(_color_line())
-        print(_format_signal_selection(aim, best["signal"], aim_rate, gopro_rate))
+        print(_format_signal_selection(log, video, best["signal"], log_rate, video_rate))
         if len(metrics_all) > 1:
             print("")
             print("Signal Candidates")
@@ -767,23 +680,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         if np.isfinite(stability_std) and stability_std > 0.2:
             print("Warning: High lag variability across subwindows; alignment may be unstable.")
 
-        if args.write_gopro_csv:
-            write_gopro_csv(
-                Path("gopro_imu.csv"),
-                gopro.gyro_time_s,
-                gopro.gyro,
-                gopro.accel_time_s,
-                gopro.accel,
-            )
-            print("Wrote gopro_imu.csv")
+        if args.write_video_imu_csv:
+            write_imu_csv(Path("video_imu.csv"), video)
+            print("Wrote video_imu.csv")
 
-        if args.write_shifted_csv:
-            write_shifted_csv(Path("aim_shifted.csv"), aim.df, aim.time_col, aim.time_s, lag_seconds)
-            print("Wrote aim_shifted.csv")
+        if args.write_shifted_log:
+            write_shifted_log(Path("log_shifted.csv"), log.df, log.time_col, log.time_s, lag_seconds)
+            print("Wrote log_shifted.csv")
 
         if args.plot:
-            time_rel = best["aim_t"] - float(best["aim_t"][0])
-            _save_plot(time_rel, best["aim_y"], best["gopro_y"], corr, lags, args.fs)
+            time_rel = best["log_t"] - float(best["log_t"][0])
+            _save_plot(time_rel, best["log_y"], best["video_y"], corr, lags, args.fs)
             print("Wrote sync_plot.png")
 
     except Exception as exc:

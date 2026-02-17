@@ -1,21 +1,21 @@
-﻿from imu_video_sync.aim_csv import detect_columns
+from imu_video_sync.sources.aim_csv import detect_columns
 
 
 def test_detect_columns_basic():
     # Basic time/gyro/accel detection with common names.
     cols = ["Time", "GyroX", "Gyro Y", "GyroZ", "AccX", "AccY", "AccZ"]
-    time_col, gyro_cols, acc_cols, special = detect_columns(cols)
-    assert time_col == "Time"
-    assert gyro_cols == ["GyroX", "Gyro Y", "GyroZ"]
-    assert acc_cols == ["AccX", "AccY", "AccZ"]
-    assert special["yaw_rate"] is None
+    detected = detect_columns(cols)
+    assert detected.time_col == "Time"
+    assert detected.gyro_cols == ["GyroX", "Gyro Y", "GyroZ"]
+    assert detected.acc_cols == ["AccX", "AccY", "AccZ"]
+    assert detected.special_cols["yaw_rate"] is None
 
 
 def test_detect_columns_specials():
     # Special channels (yaw rate, lateral/longitudinal accel) should be recognized.
     cols = ["Log Time", "Yaw Rate", "LatAcc", "LongAcc"]
-    time_col, gyro_cols, acc_cols, special = detect_columns(cols)
-    assert time_col == "Log Time"
-    assert "Yaw Rate" in gyro_cols
-    assert special["lat_acc"] == "LatAcc"
-    assert special["long_acc"] == "LongAcc"
+    detected = detect_columns(cols)
+    assert detected.time_col == "Log Time"
+    assert "Yaw Rate" in detected.gyro_cols
+    assert detected.special_cols["lat_acc"] == "LatAcc"
+    assert detected.special_cols["long_acc"] == "LongAcc"

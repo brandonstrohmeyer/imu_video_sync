@@ -13,7 +13,7 @@ Legend:
 | Device / Example | Gyro Present | Gyro Accessible | Status | Notes |
 | --- | --- | --- | --- | --- |
 | GoPro HERO5+ | Yes | Yes (GPMF in MP4) | ✅ Supported | Current primary path via `pygpmf-oz`. |
-| DJI Osmo Action (varies) | Model-dependent | Model-dependent | ⚠️ Investigate | Requires model and settings validation. |
+| DJI Osmo Action (varies) | Model-dependent | Model-dependent | ⚠️ Investigate | Validate by model/firmware. Prefer pure-Python options (e.g., `pyosmogps` for GPS-only metadata). Rust deps (e.g., `telemetry-parser`) are out of scope. |
 | Other action cams (Insta360, etc.) | Model-dependent | Model-dependent | 🛠️ Planned | Depends on metadata path or SDK. |
 
 **Loggers**

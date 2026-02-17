@@ -29,18 +29,23 @@ def main() -> None:
 
     imu = extract_gopro_imu(str(mp4_path))
 
+    gyro_time_s = None if imu.gyro is None else imu.gyro.time_s
+    gyro = None if imu.gyro is None else imu.gyro.values
+    accel_time_s = None if imu.accel is None else imu.accel.time_s
+    accel = None if imu.accel is None else imu.accel.values
+
     np.savez_compressed(
         out_path,
-        gyro_time_s=imu.gyro_time_s,
-        gyro=imu.gyro,
-        accel_time_s=imu.accel_time_s,
-        accel=imu.accel,
-        backend=imu.backend,
+        gyro_time_s=gyro_time_s,
+        gyro=gyro,
+        accel_time_s=accel_time_s,
+        accel=accel,
+        backend=imu.meta.name if imu.meta else "unknown",
         source=str(mp4_path),
     )
 
-    gyro_shape = None if imu.gyro is None else imu.gyro.shape
-    accel_shape = None if imu.accel is None else imu.accel.shape
+    gyro_shape = None if gyro is None else gyro.shape
+    accel_shape = None if accel is None else accel.shape
     print(f"Wrote fixture: {out_path}")
     print(f"Gyro shape: {gyro_shape}")
     print(f"Accel shape: {accel_shape}")

@@ -35,3 +35,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-p no:tmpdir"
+cache_dir = "tests/py_cache"
+norecursedirs = ["py_tmp", "py_tmp2", "py_cache", "tmp_pytest", "tmp_pytest_cache", ".tmp", ".pytest_tmp", ".pytest_cache_local"]

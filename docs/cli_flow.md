@@ -3,7 +3,7 @@
 The CLI is in `src/imu_video_sync/cli.py`.
 
 ## Auto-detecting files
-- If you do not pass `--mp4` and `--csv`, the tool looks for exactly one `.mp4` and one `.csv` in the current directory.
+- If you do not pass `--video` and `--log`, the tool looks for exactly one `.mp4` and one `.csv` in the current directory.
 - If there are multiple files, you must pass explicit paths.
 
 ## Signal selection
@@ -22,4 +22,4 @@ For a session of length `T`, window length `W`, and step `S`, window count is ro
 `floor((T - W) / S) + 1`
 
 ## Outputs
-The CLI prints a summary and a RaceRender-friendly offset line. Optional files are created only if you pass their flags: `--write-gopro-csv`, `--write-shifted-csv`, or `--plot`.
+The CLI prints a summary and a RaceRender-friendly offset line. Optional files are created only if you pass their flags: `--write-video-imu-csv`, `--write-shifted-log`, or `--plot`.

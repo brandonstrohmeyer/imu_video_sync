@@ -20,6 +20,13 @@ dist/
 
 # Test/coverage
 .pytest_cache/
+.pytest_cache_local/
+.pytest_tmp/
+tmp_pytest/
+tmp_pytest_cache/
+tests/py_cache/
+tests/py_tmp/
+tests/py_tmp2/
 .coverage
 htmlcov/
 
@@ -33,9 +40,14 @@ htmlcov/
 .tmp/
 gopro_imu.csv
 aim_shifted.csv
+video_imu.csv
+log_shifted.csv
 sync_plot.png
 
 # OS/editor
 .DS_Store
 Thumbs.db
 *.swp
+
+# Development resources
+develop/
