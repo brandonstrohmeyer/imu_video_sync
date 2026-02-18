@@ -5,6 +5,16 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.2.3)"
+        required: true
+        type: string
+  workflow_run:
+    workflows:
+      - "Tag on merge"
+    types:
+      - completed
 
 permissions:
   contents: write
@@ -12,6 +22,9 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      tag: ${{ steps.release_tag.outputs.tag }}
     env:
       RUSTUP_TOOLCHAIN: stable
     strategy:
@@ -24,6 +37,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Resolve release tag
+        id: release_tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >
+          python -c "import os, re, subprocess, sys;
+          event=os.environ.get('GITHUB_EVENT_NAME','');
+          tag=os.environ.get('INPUT_TAG') if event=='workflow_dispatch' else None;
+          tag=os.environ.get('GITHUB_REF_NAME') if event=='push' else tag;
+          if event=='workflow_run':
+            sha=os.environ.get('WORKFLOW_RUN_HEAD_SHA');
+            if not sha: sys.exit('Missing workflow_run head sha');
+            tags=subprocess.check_output(['git','tag','--points-at',sha], text=True).splitlines();
+            tags=[t for t in tags if re.match(r'^v\\d+\\.\\d+\\.\\d+$', t)];
+            tag=tags[0] if tags else None;
+          if not tag: sys.exit('Unable to resolve release tag');
+          print('Resolved tag:', tag);
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write(f'tag={tag}\\n')"
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -104,4 +140,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: ${{ needs.build.outputs.tag }}
           files: release-artifacts/**/*
