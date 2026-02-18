@@ -3,7 +3,7 @@
 Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. It accurately estimates the time offset by comparing motion patterns and prints an offset instruction that can be used by your video editor of choice including RaceRender.
 
 
-**Supported Devices**
+## Supported Devices
 
 **Cameras**
 - GoPro HERO5+
@@ -13,21 +13,38 @@ Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) 
 - AiM CSV (e.g., XLog, Solo 2)
 - RaceChrono CSV (phone IMU)
 
-**Install (Binary Release)**
-1. Go to the GitHub Releases page for this repo.
+## Installation
+1. Go to the GitHub [Releases](https://github.com/brandonstrohmeyer/imu_video_sync/releases) page.
 2. Download the binary for your OS:
    - Windows: `IMUVideoSync-windows-x64.exe`
    - macOS: `IMUVideoSync-macos-x64`
    - Linux: `IMUVideoSync-linux-x64`
 3. Run the binary from a terminal.
 
-**Usage**
+## Usage
+
 Basic example:
 ```
 IMUVideoSync --video session.mp4 --log aim.csv
+
+...
+
+Sync Summary
+─────────────────────────────
+Correlation peak            0.631
+Peak-to-sidelobe ratio      3.190
+Stability (stddev s)        0.000
+Confidence                  High (88/100)
+
+Offset Summary
+─────────────────────────────
+Lag (seconds)                   +24.540
+Lag (frames)                    +1471
+Timecode offset                 +00:00:24;32
+Video offset within project     00:00:24.540
 ```
 
-**Outputs**
+## Outputs
 - **Signal Candidates** table (includes the selected signal).
 - **Sync Summary** with:
   - `Correlation peak`: max normalized correlation (higher is better).
@@ -51,7 +68,7 @@ IMUVideoSync --video session.mp4 --log aim.csv
 - `sync_plot.png` if `--plot`
   - Visual diagnostics: signals, correlation curve, and difference signal.
 
-**How It Works**
+## How It Works
 1. Extract video IMU (gyro/accel) from MP4 using `telemetry-parser` and normalize timestamps to start at 0.0 seconds.
 2. Parse a log CSV (AiM-style or RaceChrono), detect delimiter and column names, and convert time to seconds-from-start.
 3. Choose a correlation signal (`gyroMag` by default; can compare multiple signals).
@@ -108,7 +125,7 @@ If values are "bad," try:
 - Stable results: multi-window consensus across the session for better confidence.
 - Non-interactive: auto-detect inputs with explicit flags for overrides.
 
-**Notes**
+## Notes
 - If the requested signal is missing in either file, the tool auto-falls back to the best available option and prints a warning.
 - The shifted log CSV overwrites the time column with seconds-from-start values plus the computed lag.
 - Use `--video-source` or `--log-source` to force a specific backend by name.
