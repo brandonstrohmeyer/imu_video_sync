@@ -1,5 +1,4 @@
 # Build-only requirements for IMUVideoSync.exe (resolved from vendor/wheels)
-telemetry-parser
 numpy
 pandas
 scipy

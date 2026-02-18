@@ -1,5 +1,6 @@
 param(
     [string]$PythonExe = ".venv312\\Scripts\\python.exe",
+    [switch]$Offline,
     [string]$WheelDir = "vendor\\wheels",
     [string]$Requirements = "requirements-build.txt",
     [switch]$Clean
@@ -13,11 +14,13 @@ Set-Location $repoRoot
 if (-not (Test-Path $PythonExe)) {
     throw "Python 3.12 venv not found at $PythonExe. Create .venv312 or pass -PythonExe."
 }
-if (-not (Test-Path $WheelDir)) {
-    throw "Wheelhouse not found: $WheelDir"
-}
-if (-not (Test-Path $Requirements)) {
-    throw "Requirements file not found: $Requirements"
+if ($Offline) {
+    if (-not (Test-Path $WheelDir)) {
+        throw "Wheelhouse not found: $WheelDir"
+    }
+    if (-not (Test-Path $Requirements)) {
+        throw "Requirements file not found: $Requirements"
+    }
 }
 
 $venvRoot = Split-Path -Parent (Split-Path -Parent $PythonExe)
@@ -29,9 +32,17 @@ if (-not (Test-Path $venvPip)) {
     throw "pip not found in venv at $venvPip"
 }
 
-Write-Host "Installing build dependencies from wheelhouse..."
+Write-Host "Installing build dependencies..."
 & $venvPip install --upgrade pip
-& $venvPip install --no-index --find-links $WheelDir -r $Requirements
+if ($Offline) {
+    Write-Host "Offline mode: installing from wheelhouse."
+    & $venvPip install --no-index --find-links $WheelDir -r $Requirements
+} else {
+    Write-Host "Online mode: installing from PyPI/git."
+    & $venvPip install -r requirements.txt
+    & $venvPip install -r requirements-venv312.txt
+    & $venvPip install pyinstaller pyinstaller-hooks-contrib pytest
+}
 
 if (-not (Test-Path $venvPyInstaller)) {
     throw "pyinstaller not found after install at $venvPyInstaller"

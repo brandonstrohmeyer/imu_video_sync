@@ -585,11 +585,12 @@ def _format_columns(headers: List[str], rows: List[List[str]]) -> str:
     return "\n".join(lines)
 
 
-def _format_candidates_table(metrics_all: List[dict]) -> str:
+def _format_candidates_table(metrics_all: List[dict], selected_idx: Optional[int] = None) -> str:
     # Simple aligned columns (no external formatting dependency).
-    headers = ["signal", "lag_s", "peak", "psr", "stability_s", "score", "windows"]
+    headers = ["signal", "lag_s", "peak", "psr", "stability_s", "score", "windows", ""]
     rows = []
-    for m in metrics_all:
+    for idx, m in enumerate(metrics_all):
+        selected_label = "[selected]" if selected_idx is not None and idx == selected_idx else ""
         rows.append(
             [
                 str(m["signal"]),
@@ -599,9 +600,17 @@ def _format_candidates_table(metrics_all: List[dict]) -> str:
                 f"{m['stability']:.3f}",
                 f"{m['score']:.3f}",
                 str(m.get("window_count", 1)),
+                selected_label,
             ]
         )
-    return _format_columns(headers, rows)
+    table = _format_columns(headers, rows)
+    if selected_idx is None:
+        return table
+    lines = table.splitlines()
+    selected_line_idx = selected_idx + 1  # header is first line
+    if 0 <= selected_line_idx < len(lines):
+        lines[selected_line_idx] = f"\x1b[1m{lines[selected_line_idx]}\x1b[0m"
+    return "\n".join(lines)
 
 
 def _color_line(width: int = 29, color_code: str = "\x1b[38;5;39m") -> str:
@@ -832,7 +841,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         default=[],
         help="Log source option key=value (repeatable).",
     )
-    parser.add_argument("--signal", default="gyroMag", help="Signal to use for correlation")
+    parser.add_argument("--signal", default="auto", help="Signal to use for correlation")
     parser.add_argument(
         "--signals",
         help="Comma-separated list of signals to evaluate (overrides --signal).",
@@ -928,6 +937,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             selected_signals = [signal]
 
         best = None
+        best_idx: Optional[int] = None
         metrics_all = []
         for sig in selected_signals:
             _status(f"Computing correlation metrics for signal: {sig}")
@@ -947,6 +957,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             metrics_all.append(metrics)
             if best is None or metrics["score"] > best["score"]:
                 best = metrics
+                best_idx = len(metrics_all) - 1
 
         if best is None:
             raise ValueError("Failed to compute lag for selected signals.")
@@ -955,15 +966,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         video_rate = best["video_rate"]
 
         print("")
-        print("Signal Selection")
+        print("Signal Candidates")
         print(_color_line())
-        print(_format_signal_selection(log, video, best["signal"], log_rate, video_rate))
-        if len(metrics_all) > 1:
-            print("")
-            print("Signal Candidates")
-            print(_color_line())
-            print(_format_candidates_table(metrics_all))
-            print("")
+        print(_format_candidates_table(metrics_all, selected_idx=best_idx))
+        print("")
 
         lag_seconds = best["lag_seconds"]
         peak = best["peak"]

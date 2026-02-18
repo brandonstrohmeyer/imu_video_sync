@@ -1,4 +1,4 @@
-telemetry-parser>=0.3.0
+telemetry-parser @ git+https://github.com/brandonstrohmeyer/telemetry-parser.git@6393f8acac2b5be0a6d5027b0f288c0bcec60a63#subdirectory=bin/python-module
 numpy
 pandas
 scipy
