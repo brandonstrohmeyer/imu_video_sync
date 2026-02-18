@@ -1,5 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-  - name: New device support
-    url: https://github.com/brandonstrohmeyer/imu_video_sync/issues/new?template=new-device-support.yml
-    about: Request support for a new camera or logging device
