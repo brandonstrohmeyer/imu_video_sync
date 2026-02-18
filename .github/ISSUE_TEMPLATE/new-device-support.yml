@@ -8,40 +8,40 @@ body:
   - type: input
     id: camera_make_model
     attributes:
-      label: Camera make and model
-      description: Example: GoPro Hero 12 Black
-      placeholder: GoPro Hero 12 Black
+      label: "Camera make and model"
+      description: "Example: GoPro Hero 12 Black"
+      placeholder: "GoPro Hero 12 Black"
     validations:
       required: true
   - type: input
     id: logger_make_model
     attributes:
-      label: Logging device make and model
-      description: Example: AiM Solo 2, RaceChrono (Pixel 8), or other IMU logger
-      placeholder: AiM Solo 2
+      label: "Logging device make and model"
+      description: "Example: AiM Solo 2, RaceChrono (Pixel 8), or other IMU logger"
+      placeholder: "AiM Solo 2"
     validations:
       required: true
   - type: input
     id: raw_video_link
     attributes:
-      label: Direct download link to raw video
-      description: Must be a direct download link (not YouTube or streaming-only). Include any access instructions if needed.
-      placeholder: https://example.com/raw_video.mp4
+      label: "Direct download link to raw video"
+      description: "Must be a direct download link (not YouTube or streaming-only). Include any access instructions if needed."
+      placeholder: "https://example.com/raw_video.mp4"
     validations:
       required: true
   - type: textarea
     id: data_log
     attributes:
-      label: CSV data log
-      description: Attach the raw CSV log file to this issue (drag and drop) or provide a direct download link.
-      placeholder: Attach file here or paste a direct download link.
+      label: "CSV data log"
+      description: "Attach the raw CSV log file to this issue (drag and drop) or provide a direct download link."
+      placeholder: "Attach file here or paste a direct download link."
     validations:
       required: true
   - type: textarea
     id: notes
     attributes:
-      label: Additional notes
-      description: Any extra details (e.g., camera settings, frame rate, firmware version, sample rate, time sync behavior).
-      placeholder: Firmware version, settings, known issues, etc.
+      label: "Additional notes"
+      description: "Any extra details (e.g., camera settings, frame rate, firmware version, sample rate, time sync behavior)."
+      placeholder: "Firmware version, settings, known issues, etc."
     validations:
       required: false
