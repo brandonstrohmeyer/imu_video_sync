@@ -193,6 +193,146 @@ def extract_telemetry_imu(path: Path) -> ImuBundle:
     )
 
 
+def _safe_preview(value: Any) -> str:
+    if value is None:
+        return "None"
+    if isinstance(value, (bool, int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        keys = list(value.keys())
+        if len(keys) > 10:
+            keys = keys[:10] + ["..."]
+        return f"dict(keys={keys})"
+    if isinstance(value, (list, tuple)):
+        return f"{type(value).__name__}(len={len(value)})"
+    return type(value).__name__
+
+
+def _collect_keys(data: Any, sample_limit: int) -> tuple[list[str], int, Optional[int]]:
+    keys: set[str] = set()
+    sampled = 0
+    total: Optional[int] = None
+
+    def _consume(sample: Any) -> None:
+        nonlocal sampled
+        if isinstance(sample, dict):
+            keys.update(sample.keys())
+            sampled += 1
+
+    if isinstance(data, dict):
+        _consume(data)
+        total = 1
+    elif isinstance(data, (list, tuple)):
+        total = len(data)
+        for item in data:
+            _consume(item)
+            if sampled >= sample_limit:
+                break
+
+    return sorted(keys), sampled, total
+
+
+def _collect_group_keys(
+    data: Any, sample_limit: int
+) -> tuple[Dict[str, List[str]], int, Optional[int]]:
+    group_keys: Dict[str, set] = {}
+    sampled = 0
+    total: Optional[int] = None
+
+    def _consume(sample: Any) -> None:
+        nonlocal sampled
+        if isinstance(sample, dict):
+            for group, group_val in sample.items():
+                if isinstance(group_val, dict):
+                    group_keys.setdefault(str(group), set()).update(group_val.keys())
+            sampled += 1
+
+    if isinstance(data, dict):
+        _consume(data)
+        total = 1
+    elif isinstance(data, (list, tuple)):
+        total = len(data)
+        for item in data:
+            _consume(item)
+            if sampled >= sample_limit:
+                break
+
+    return {k: sorted(v) for k, v in group_keys.items()}, sampled, total
+
+
+def inspect_telemetry_keys(path: Path, sample_limit: int = 2000) -> Dict[str, Any]:
+    if telemetry_parser is None:
+        raise ImportError("telemetry-parser is not installed. Install it to use this source.")
+
+    parser = telemetry_parser.Parser(str(path))
+    data = parser.telemetry()
+    keys, sampled, total = _collect_keys(data, sample_limit)
+    group_keys, group_sampled, group_total = _collect_group_keys(data, sample_limit)
+
+    human_keys: Optional[list[str]] = None
+    human_sampled: Optional[int] = None
+    human_total: Optional[int] = None
+    human_group_keys: Optional[Dict[str, List[str]]] = None
+    human_group_sampled: Optional[int] = None
+    human_group_total: Optional[int] = None
+    try:
+        data_hr = parser.telemetry(human_readable=True)
+    except TypeError:
+        data_hr = None
+    except Exception:
+        data_hr = None
+    if data_hr is not None:
+        human_keys, human_sampled, human_total = _collect_keys(data_hr, sample_limit)
+        human_group_keys, human_group_sampled, human_group_total = _collect_group_keys(
+            data_hr, sample_limit
+        )
+
+    public_attrs: list[str] = []
+    scalar_attrs: Dict[str, str] = {}
+    frame_attrs: Dict[str, str] = {}
+    frame_info: Optional[Any] = None
+    for name in dir(parser):
+        if name.startswith("_"):
+            continue
+        try:
+            value = getattr(parser, name)
+        except Exception:
+            continue
+        if callable(value):
+            continue
+        public_attrs.append(name)
+        if isinstance(value, (bool, int, float, str, dict, list, tuple)) or value is None:
+            scalar_attrs[name] = _safe_preview(value)
+        if "frame" in name.lower() or "fps" in name.lower():
+            frame_attrs[name] = _safe_preview(value)
+
+    try:
+        frame_info = parser.frame_info()
+    except Exception:
+        frame_info = None
+
+    return {
+        "keys": keys,
+        "sampled": sampled,
+        "total": total,
+        "group_keys": group_keys,
+        "group_sampled": group_sampled,
+        "group_total": group_total,
+        "human_keys": human_keys,
+        "human_sampled": human_sampled,
+        "human_total": human_total,
+        "human_group_keys": human_group_keys,
+        "human_group_sampled": human_group_sampled,
+        "human_group_total": human_group_total,
+        "parser_attrs": scalar_attrs,
+        "frame_attrs": frame_attrs,
+        "frame_info": frame_info,
+        "public_attrs": sorted(public_attrs),
+    }
+
+
 @register_source("video")
 class TelemetryParserVideoSource(VideoSource):
     name = "telemetry_parser"

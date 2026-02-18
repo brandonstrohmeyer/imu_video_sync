@@ -21,7 +21,7 @@ This document defines the minimum, standardized tests required for every source 
 - `sniff` positive: the plugin should score highly on a known-good video file for that source.
 - `sniff` negative: the plugin should score low on an unrelated MP4/MOV.
 - `load` smoke: loading a known-good file returns an `ImuBundle` with at least one IMU series.
-- `fps` detection: detect a non-zero frame rate from the video fixture (via ExifTool auto-detect).
+- `fps` detection: detect a non-zero frame rate from the video fixture (telemetry-parser FrameInfo only).
 - `time` monotonic: returned `time_s` must be strictly increasing or non-decreasing.
 - `time` normalization: `time_s[0]` must be `0.0` (within a small tolerance).
 - `channels` presence: at least one of `gyro` or `accel` exists; otherwise, the plugin must raise a clear error.

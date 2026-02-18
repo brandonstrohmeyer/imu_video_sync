@@ -1,9 +1,6 @@
 ﻿from __future__ import annotations
 
 import argparse
-import json
-import shutil
-import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -527,70 +524,51 @@ def _offset_summary_rows(lag_seconds: float, fps: Optional[float]) -> List[Tuple
         offset_label = "Data offset within project"
     else:
         offset_label = "Video offset within project"
-    return [
+    rows = [
         ("Lag (seconds)", f"{lag_seconds:+.3f}"),
-        ("Lag (frames)", _format_lag_frames(lag_seconds, fps)),
-        ("Timecode offset", _format_timecode(lag_seconds, fps)),
         (offset_label, _format_hhmmss_ms(lag_seconds)),
     ]
+    if fps is not None and fps > 0:
+        rows.insert(1, ("Lag (frames)", _format_lag_frames(lag_seconds, fps)))
+        rows.insert(2, ("Timecode offset", _format_timecode(lag_seconds, fps)))
+    return rows
 
 
-def _find_exiftool() -> Optional[Path]:
-    repo_root = Path(__file__).resolve().parents[2]
-    for rel in ("tools/exiftool.exe", "tools/exiftool(-k).exe"):
-        candidate = repo_root / rel
-        if candidate.exists():
-            return candidate
-    system_path = shutil.which("exiftool")
-    if system_path:
-        return Path(system_path)
+def _detect_video_fps_from_telemetry_parser(video_path: Path) -> Optional[float]:
+    if not video_path.exists():
+        return None
+    try:
+        import telemetry_parser  # type: ignore
+    except Exception:
+        return None
+    try:
+        parser = telemetry_parser.Parser(str(video_path))
+    except Exception:
+        return None
+    try:
+        frame_info = parser.frame_info()
+    except Exception:
+        frame_info = None
+    fps = None
+    if isinstance(frame_info, dict):
+        for key in ("fps", "frame_rate", "framerate", "FrameRate"):
+            value = frame_info.get(key)
+            if value is None:
+                continue
+            try:
+                fps = float(value)
+                break
+            except (TypeError, ValueError):
+                continue
+    elif isinstance(frame_info, (int, float)):
+        fps = float(frame_info)
+    if fps is not None and fps > 0:
+        return fps
     return None
 
 
 def _detect_video_fps(video_path: Path) -> Optional[float]:
-    exiftool = _find_exiftool()
-    if exiftool is None:
-        return None
-    tags = [
-        "VideoFrameRate",
-        "PlaybackFrameRate",
-        "TrackFrameRate",
-        "AvgFrameRate",
-        "AverageFrameRate",
-        "VideoAvgFrameRate",
-        "FrameRate",
-        "MovieFrameRate",
-        "OriginalFrameRate",
-        "CaptureFrameRate",
-        "FPS",
-    ]
-    cmd = [str(exiftool), "-api", "largefilesupport=1", "-n", "-j"]
-    cmd += [f"-{tag}" for tag in tags]
-    cmd.append(str(video_path))
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    except OSError:
-        return None
-    if proc.returncode != 0:
-        return None
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return None
-    if not payload:
-        return None
-    row = payload[0]
-    for tag in tags:
-        value = row.get(tag)
-        if value is None:
-            continue
-        try:
-            fps = float(value)
-        except (TypeError, ValueError):
-            continue
-        if fps > 0:
-            return fps
-    return None
+    return _detect_video_fps_from_telemetry_parser(video_path)
 
 
 def _format_columns(headers: List[str], rows: List[List[str]]) -> str:
@@ -629,6 +607,134 @@ def _format_candidates_table(metrics_all: List[dict]) -> str:
 def _color_line(width: int = 29, color_code: str = "\x1b[38;5;39m") -> str:
     # Thin colored divider for readability in terminal output.
     return f"{color_code}{'─' * width}\x1b[0m"
+
+
+def _dump_video_telemetry_keys(video_path: Path, source_name: str) -> None:
+    if source_name != "telemetry_parser":
+        print("Telemetry key dump is only supported for telemetry_parser sources.")
+        return
+
+    try:
+        from .sources import telemetry_parser_camera
+    except Exception as exc:
+        print(f"Telemetry key dump unavailable: {exc}")
+        return
+
+    try:
+        info = telemetry_parser_camera.inspect_telemetry_keys(video_path)
+    except Exception as exc:
+        print(f"Telemetry key dump failed: {exc}")
+        return
+
+    keys = info.get("keys", [])
+    sampled = info.get("sampled", 0)
+    total = info.get("total")
+    group_keys = info.get("group_keys", {})
+    group_sampled = info.get("group_sampled", 0)
+    group_total = info.get("group_total")
+    human_keys = info.get("human_keys")
+    human_sampled = info.get("human_sampled")
+    human_total = info.get("human_total")
+    human_group_keys = info.get("human_group_keys")
+    human_group_sampled = info.get("human_group_sampled")
+    human_group_total = info.get("human_group_total")
+    parser_attrs = info.get("parser_attrs", {})
+    frame_attrs = info.get("frame_attrs", {})
+    public_attrs = info.get("public_attrs", [])
+    frame_info = info.get("frame_info")
+    frame_keys = [k for k in keys if "frame" in k.lower() or "fps" in k.lower()]
+    nested_frame_keys = []
+    for group, gkeys in group_keys.items():
+        for key in gkeys:
+            if "frame" in key.lower() or "fps" in key.lower():
+                nested_frame_keys.append(f"{group}.{key}")
+
+    print("")
+    print("Telemetry Keys")
+    print(_color_line())
+    if total is not None:
+        print(f"Samples\t{sampled}/{total}")
+    else:
+        print(f"Samples\t{sampled}")
+    print(f"Key count\t{len(keys)}")
+    if frame_keys:
+        print(f"Frame/FPS keys\t{', '.join(frame_keys)}")
+    else:
+        print("Frame/FPS keys\tnone")
+    if nested_frame_keys:
+        print(f"Frame/FPS keys (nested)\t{', '.join(sorted(nested_frame_keys))}")
+    if keys:
+        print("Keys")
+        print(", ".join(keys))
+    print("")
+
+    if group_keys:
+        print("Telemetry Group Keys")
+        print(_color_line())
+        if group_total is not None:
+            print(f"Samples\t{group_sampled}/{group_total}")
+        else:
+            print(f"Samples\t{group_sampled}")
+        for group, gkeys in sorted(group_keys.items()):
+            print(f"{group}\t{', '.join(gkeys)}")
+        print("")
+
+    if human_keys is not None:
+        human_frame_keys = [k for k in human_keys if "frame" in k.lower() or "fps" in k.lower()]
+        print("Telemetry Keys (human_readable=True)")
+        print(_color_line())
+        if human_total is not None:
+            print(f"Samples\t{human_sampled}/{human_total}")
+        else:
+            print(f"Samples\t{human_sampled}")
+        print(f"Key count\t{len(human_keys)}")
+        if human_frame_keys:
+            print(f"Frame/FPS keys\t{', '.join(human_frame_keys)}")
+        else:
+            print("Frame/FPS keys\tnone")
+        if human_group_keys:
+            nested_hr = []
+            for group, gkeys in human_group_keys.items():
+                for key in gkeys:
+                    if "frame" in key.lower() or "fps" in key.lower():
+                        nested_hr.append(f"{group}.{key}")
+            if nested_hr:
+                print(f"Frame/FPS keys (nested)\t{', '.join(sorted(nested_hr))}")
+        if human_keys:
+            print("Keys")
+            print(", ".join(human_keys))
+        print("")
+
+    if human_group_keys:
+        print("Telemetry Group Keys (human_readable=True)")
+        print(_color_line())
+        if human_group_total is not None:
+            print(f"Samples\t{human_group_sampled}/{human_group_total}")
+        else:
+            print(f"Samples\t{human_group_sampled}")
+        for group, gkeys in sorted(human_group_keys.items()):
+            print(f"{group}\t{', '.join(gkeys)}")
+        print("")
+
+    print("Parser Attributes")
+    print(_color_line())
+    if frame_info is not None:
+        print(f"frame_info\t{frame_info}")
+    if frame_attrs:
+        print("Frame/FPS attrs")
+        for key, val in sorted(frame_attrs.items()):
+            print(f"{key}\t{val}")
+    else:
+        print("Frame/FPS attrs\tnone")
+    if parser_attrs:
+        print("Scalar attrs")
+        for key, val in sorted(parser_attrs.items()):
+            print(f"{key}\t{val}")
+    if public_attrs:
+        print("")
+        print("Public attrs")
+        print(", ".join(public_attrs))
+    print("")
 
 
 def _status(message: str) -> None:
@@ -751,6 +857,11 @@ def main(argv: Optional[List[str]] = None) -> None:
         action="store_true",
         help="Show drift estimate (can be noisy on short or low-activity clips).",
     )
+    parser.add_argument(
+        "--dump-video-telemetry-keys",
+        action="store_true",
+        help="Print raw telemetry keys from telemetry-parser (debug aid).",
+    )
     parser.add_argument("--fs", type=float, default=50.0, help="Resample rate (Hz)")
     parser.add_argument("--lowpass-hz", type=float, default=8.0, help="Low-pass cutoff (Hz)")
     parser.add_argument("--highpass-hz", type=float, default=0.2, help="High-pass cutoff (Hz)")
@@ -780,6 +891,9 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         video_source = resolve_source("video", video_path, forced=args.video_source)
         log_source = resolve_source("log", log_path, forced=args.log_source)
+
+        if args.dump_video_telemetry_keys:
+            _dump_video_telemetry_keys(video_path, video_source.name)
 
         _status(f"Loading log: {log_path.name} ({log_source.name})")
         log = log_source.load(log_path, **log_opts)
@@ -880,6 +994,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         print("Offset Summary")
         print(_color_line())
         print(_format_kv(_offset_summary_rows(lag_seconds, video_fps)))
+        if video_fps is None or video_fps <= 0:
+            print("Warning: FPS unavailable; skipping frame/timecode offsets.")
         print("")
 
         if peak < 0.2:
