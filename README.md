@@ -1,6 +1,6 @@
 ﻿# imu-video-sync
 
-Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. Built-in sources include telemetry-parser for cameras, plus AiM-style CSV logs and RaceChrono CSV logs. The architecture is modular so additional in-repo sources can be added cleanly. It estimates the time offset by comparing motion patterns and prints a RaceRender-friendly offset instruction.
+Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. It accurately estimates the time offset by comparing motion patterns and prints an offset instruction that can be used by your video editor of choice including RaceRender.
 
 
 **Supported Devices**
@@ -13,39 +13,32 @@ Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) 
 - AiM CSV (e.g., XLog, Solo 2)
 - RaceChrono CSV (phone IMU)
 
-**Quickstart**
-1. Install dependencies: `pip install -r requirements.txt`
-2. Optional for plotting: `pip install matplotlib`
-3. Run in a directory with exactly one `.mp4` and one `.csv`: `imu_video_sync` (otherwise pass `--video` and `--log`).
+**Install (Binary Release)**
+1. Go to the GitHub Releases page for this repo.
+2. Download the binary for your OS:
+   - Windows: `IMUVideoSync-windows-x64.exe`
+   - macOS: `IMUVideoSync-macos-x64`
+   - Linux: `IMUVideoSync-linux-x64`
+3. Run the binary from a terminal.
 
 **Usage**
+Basic example:
 ```
-imu_video_sync
-imu_video_sync --video session.mp4 --log aim.csv
-imu_video_sync --signal gyroMag --max-lag 600 --window 360
-imu_video_sync --signal auto
-imu_video_sync --signals gyroMag,yawRate,latAcc
-imu_video_sync --start 60 --window 240
-imu_video_sync --no-auto-window
-imu_video_sync --window-step 10
-imu_video_sync --log-time-col "Time" --log-gyro-cols "GyroX,GyroY,GyroZ"
-imu_video_sync --video-source telemetry_parser --log-source racechrono_csv
-imu_video_sync --write-video-imu-csv
-imu_video_sync --write-shifted-log
-imu_video_sync --plot
+IMUVideoSync --video session.mp4 --log aim.csv
 ```
 
-**Outputs (Printed)**
-- Selected video signal and inferred sample rate.
-- Selected log signal and inferred sample rate.
+**Outputs**
+- **Signal Candidates** table (includes the selected signal).
 - **Sync Summary** with:
-  - `Lag (seconds)`: estimated offset in seconds.
   - `Correlation peak`: max normalized correlation (higher is better).
   - `Peak-to-sidelobe ratio (PSR)`: peak vs. second-strongest local peak (higher is better).
   - `Stability (stddev s)`: lag variability across subwindows (lower is better).
-  - `Drift (s/s)` when measurable: trend of lag over time (near zero is better).
   - `Confidence`: High/Medium/Low with a 0-100 score.
-- **RaceRender Offset**:
+  - `Drift (s/s)` when measurable: trend of lag over time (near zero is better).
+- **Offset Summary** with:
+  - `Lag (seconds)`: estimated offset in seconds.
+  - `Lag (frames)`: offset in frames (when FPS is known).
+  - `Timecode offset`: SMPTE timecode offset (when FPS is known).
   - `Video offset within project: HH:MM:SS.mmm` when video starts later than data.
   - `Data offset within project: HH:MM:SS.mmm` when data starts later than video.
 
