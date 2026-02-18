@@ -16,6 +16,10 @@ on:
     types:
       - completed
 
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name || github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -72,6 +76,9 @@ jobs:
           if not tag:
               sys.exit("Unable to resolve release tag")
 
+          tag = tag.replace("\\n", "").replace("\\r", "").strip()
+          if not re.match(r"^v\\d+\\.\\d+\\.\\d+$", tag):
+              sys.exit(f"Resolved tag is invalid: {tag!r}")
           print("Resolved tag:", tag)
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"tag={tag}\\n")
@@ -159,3 +166,5 @@ jobs:
           tag_name: ${{ needs.build.outputs.tag }}
           name: ${{ needs.build.outputs.tag }}
           files: release-artifacts/**/*
+          draft: false
+          prerelease: false
