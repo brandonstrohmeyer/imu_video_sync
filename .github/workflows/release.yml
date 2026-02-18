@@ -43,23 +43,39 @@ jobs:
 
       - name: Resolve release tag
         id: release_tag
+        shell: bash
         env:
           INPUT_TAG: ${{ inputs.tag }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: >
-          python -c "import os, re, subprocess, sys;
-          event=os.environ.get('GITHUB_EVENT_NAME','');
-          tag=os.environ.get('INPUT_TAG') if event=='workflow_dispatch' else None;
-          tag=os.environ.get('GITHUB_REF_NAME') if event=='push' else tag;
-          if event=='workflow_run':
-            sha=os.environ.get('WORKFLOW_RUN_HEAD_SHA');
-            if not sha: sys.exit('Missing workflow_run head sha');
-            tags=subprocess.check_output(['git','tag','--points-at',sha], text=True).splitlines();
-            tags=[t for t in tags if re.match(r'^v\\d+\\.\\d+\\.\\d+$', t)];
-            tag=tags[0] if tags else None;
-          if not tag: sys.exit('Unable to resolve release tag');
-          print('Resolved tag:', tag);
-          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write(f'tag={tag}\\n')"
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          tag = None
+
+          if event == "workflow_dispatch":
+              tag = os.environ.get("INPUT_TAG")
+          elif event == "push":
+              tag = os.environ.get("GITHUB_REF_NAME")
+          elif event == "workflow_run":
+              sha = os.environ.get("WORKFLOW_RUN_HEAD_SHA")
+              if not sha:
+                  sys.exit("Missing workflow_run head sha")
+              tags = subprocess.check_output(["git", "tag", "--points-at", sha], text=True).splitlines()
+              tags = [t for t in tags if re.match(r"^v\\d+\\.\\d+\\.\\d+$", t)]
+              tag = tags[0] if tags else None
+
+          if not tag:
+              sys.exit("Unable to resolve release tag")
+
+          print("Resolved tag:", tag)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"tag={tag}\\n")
+          PY
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
