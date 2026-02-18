@@ -1,0 +1,39 @@
+name: Tag on merge
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read version from CHANGELOG.md
+        id: changelog
+        run: |
+          TAG=$(python scripts/get_changelog_version.py)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag if missing
+        run: |
+          TAG="${{ steps.changelog.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
