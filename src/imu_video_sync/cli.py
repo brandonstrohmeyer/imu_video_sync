@@ -545,25 +545,105 @@ def _detect_video_fps_from_telemetry_parser(video_path: Path) -> Optional[float]
         parser = telemetry_parser.Parser(str(video_path))
     except Exception:
         return None
-    try:
-        frame_info = parser.frame_info()
-    except Exception:
-        frame_info = None
-    fps = None
-    if isinstance(frame_info, dict):
-        for key in ("fps", "frame_rate", "framerate", "FrameRate"):
-            value = frame_info.get(key)
-            if value is None:
-                continue
-            try:
-                fps = float(value)
-                break
-            except (TypeError, ValueError):
-                continue
-    elif isinstance(frame_info, (int, float)):
-        fps = float(frame_info)
+    fps = _extract_fps_from_frame_info(parser)
     if fps is not None and fps > 0:
         return fps
+
+    fps = _extract_fps_from_telemetry(parser)
+    if fps is not None and fps > 0:
+        return fps
+
+    return None
+
+
+def _extract_fps_from_frame_info(parser: object) -> Optional[float]:
+    try:
+        frame_info = parser.frame_info()  # type: ignore[attr-defined]
+    except Exception:
+        frame_info = None
+
+    return _coerce_fps(frame_info) or _search_fps_in_value(frame_info)
+
+
+def _extract_fps_from_telemetry(parser: object) -> Optional[float]:
+    try:
+        data = parser.telemetry()  # type: ignore[attr-defined]
+    except Exception:
+        return None
+
+    for sample in _iter_telemetry_samples(data):
+        if not isinstance(sample, dict):
+            continue
+        for group_val in sample.values():
+            if not isinstance(group_val, dict):
+                continue
+            fps = _find_fps_in_tag_map(group_val)
+            if fps is not None:
+                return fps
+    return None
+
+
+def _iter_telemetry_samples(data: object):
+    if isinstance(data, dict):
+        yield data
+    elif isinstance(data, (list, tuple)):
+        for item in data:
+            yield item
+
+
+def _find_fps_in_tag_map(tag_map: dict) -> Optional[float]:
+    for key, value in tag_map.items():
+        key_str = str(key).strip().lower()
+        if key_str in {"framerate", "frame_rate", "frame rate", "fps"}:
+            fps = _coerce_fps(value)
+            if fps is not None:
+                return fps
+        if "frameinfo" in key_str or "frame info" in key_str:
+            fps = _search_fps_in_value(value)
+            if fps is not None:
+                return fps
+    return _search_fps_in_value(tag_map)
+
+
+def _coerce_fps(value: object) -> Optional[float]:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        cleaned = value.strip().lower().replace("fps", "").strip()
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
+def _search_fps_in_value(value: object, depth: int = 3) -> Optional[float]:
+    if depth < 0:
+        return None
+    if isinstance(value, dict):
+        for key, val in value.items():
+            key_str = str(key).strip().lower()
+            if key_str in {"fps", "framerate", "frame_rate", "frame rate", "framerate_hz"}:
+                fps = _coerce_fps(val)
+                if fps is not None:
+                    return fps
+            if "frameinfo" in key_str or "frame info" in key_str:
+                fps = _search_fps_in_value(val, depth - 1)
+                if fps is not None:
+                    return fps
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            fps = _search_fps_in_value(item, depth - 1)
+            if fps is not None:
+                return fps
+    elif isinstance(value, str) and value.strip().startswith("{"):
+        try:
+            import json
+
+            parsed = json.loads(value)
+        except Exception:
+            return None
+        return _search_fps_in_value(parsed, depth - 1)
     return None
 
 
