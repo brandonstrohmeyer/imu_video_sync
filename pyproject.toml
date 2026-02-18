@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imu-video-sync"
+version = "0.1.0"
+description = "Sync telemetry logs to camera video using IMU cross-correlation"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["telemetry", "imu", "sync", "video", "camera", "logger"]
+authors = [{name = "Codex"}]
+dependencies = [
+  "telemetry-parser @ git+https://github.com/brandonstrohmeyer/telemetry-parser.git@05eb7dddeea6602b9fd07eaf2fb221849cae5268#subdirectory=bin/python-module",
+  "numpy",
+  "pandas",
+  "scipy",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib"]
+dev = ["pytest"]
+
+[project.scripts]
+imu_video_sync = "imu_video_sync.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-p no:tmpdir"
+cache_dir = "tests/py_cache"
+norecursedirs = ["py_tmp", "py_tmp2", "py_cache", "tmp_pytest", "tmp_pytest_cache", ".tmp", ".pytest_tmp", ".pytest_cache_local"]

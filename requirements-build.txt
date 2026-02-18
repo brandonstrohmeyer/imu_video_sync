@@ -1,0 +1,7 @@
+# Build-only requirements for IMUVideoSync.exe (resolved from vendor/wheels)
+numpy
+pandas
+scipy
+pyinstaller
+pyinstaller-hooks-contrib
+pytest
