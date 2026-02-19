@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from . import __version__
 from .core.models import ImuBundle, LogData
 from .core.signals import SIGNAL_PRIORITY, available_signals, choose_signal, derive_signal
 from .correlate import estimate_lag, lag_stability, peak_to_sidelobe
@@ -1067,6 +1068,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         description="Sync telemetry logs to camera video using IMU cross-correlation.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show version and exit.",
     )
 
     parser.add_argument("--video", help="Path to video file (MP4)")

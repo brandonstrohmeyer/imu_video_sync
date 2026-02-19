@@ -99,6 +99,12 @@ jobs:
               f.write(f"tag={tag}\\n")
           PY
 
+      - name: Write version file
+        shell: bash
+        run: |
+          TAG="${{ steps.release_tag.outputs.tag }}"
+          echo "__version__ = \"${TAG}\"" > src/imu_video_sync/_version.py
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:

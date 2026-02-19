@@ -11,6 +11,16 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
+$version = "dev"
+try {
+    $version = (git describe --tags --abbrev=0).Trim()
+} catch {
+    $version = "dev"
+}
+$versionFile = Join-Path $repoRoot "src\\imu_video_sync\\_version.py"
+$versionContent = "__version__ = `"$version`"`n"
+Set-Content -Path $versionFile -Value $versionContent -Encoding UTF8
+
 if (-not (Test-Path $PythonExe)) {
     throw "Python 3.12 venv not found at $PythonExe. Create .venv312 or pass -PythonExe."
 }

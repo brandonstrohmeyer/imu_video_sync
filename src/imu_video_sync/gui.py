@@ -8,6 +8,7 @@ import threading
 import traceback
 from pathlib import Path
 
+from . import __version__
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, scrolledtext
@@ -37,7 +38,7 @@ class _QueueWriter:
 class _GuiApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("IMU Video Sync")
+        self.root.title(f"IMU Video Sync {__version__}")
         self.root.geometry("800x520")
 
         self.video_var = tk.StringVar()
