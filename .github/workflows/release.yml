@@ -119,6 +119,11 @@ jobs:
       - name: Ensure build dir
         run: python -c "import pathlib; pathlib.Path('build').mkdir(exist_ok=True)"
 
+      - name: Prepare macOS icon
+        if: matrix.platform == 'macos'
+        run: |
+          sips -s format icns assets/icon/IMUVideoSync.png --out build/IMUVideoSync.icns
+
       - name: Run tests
         run: python -m pytest --junitxml build/pytest-report.xml
 
@@ -137,21 +142,34 @@ jobs:
           python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync
           --icon assets/icon/IMUVideoSync.ico
           --paths src
-          --add-data assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon
-          --add-data assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon
+          --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon"
+          --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon"
           --collect-binaries telemetry_parser
           --collect-data telemetry_parser
           --collect-submodules telemetry_parser
           scripts/imu_video_sync_entry.py
 
-      - name: Build binary (macOS/Linux)
-        if: matrix.platform != 'windows'
+      - name: Build binary (macOS)
+        if: matrix.platform == 'macos'
+        run: >
+          python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync
+          --icon build/IMUVideoSync.icns
+          --paths src
+          --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon"
+          --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon"
+          --collect-binaries telemetry_parser
+          --collect-data telemetry_parser
+          --collect-submodules telemetry_parser
+          scripts/imu_video_sync_entry.py
+
+      - name: Build binary (Linux)
+        if: matrix.platform == 'linux'
         run: >
           python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync
           --icon assets/icon/IMUVideoSync.ico
           --paths src
-          --add-data assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon
-          --add-data assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon
+          --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon"
+          --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon"
           --collect-binaries telemetry_parser
           --collect-data telemetry_parser
           --collect-submodules telemetry_parser
