@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -77,6 +78,140 @@ def _format_rate(rate: float) -> str:
     if np.isnan(rate):
         return "unknown"
     return f"{rate:.2f} Hz"
+
+
+def _safe_duration(time_s: np.ndarray) -> float:
+    if time_s.size < 2:
+        return 0.0
+    finite = np.isfinite(time_s)
+    if not finite.any():
+        return 0.0
+    return float(np.nanmax(time_s[finite]) - np.nanmin(time_s[finite]))
+
+
+def _bundle_duration(imu: ImuBundle) -> float:
+    candidates = []
+    if imu.gyro is not None:
+        candidates.append(imu.gyro.time_s)
+    if imu.accel is not None:
+        candidates.append(imu.accel.time_s)
+    if imu.channels:
+        for series in imu.channels.values():
+            candidates.append(series.time_s)
+    for time_s in candidates:
+        duration = _safe_duration(np.asarray(time_s, dtype=float))
+        if duration > 0:
+            return duration
+    return 0.0
+
+
+def _bundle_rate(imu: ImuBundle) -> float:
+    candidates = []
+    if imu.gyro is not None:
+        candidates.append(imu.gyro.time_s)
+    if imu.accel is not None:
+        candidates.append(imu.accel.time_s)
+    if imu.channels:
+        for series in imu.channels.values():
+            candidates.append(series.time_s)
+    for time_s in candidates:
+        rate = infer_sample_rate(np.asarray(time_s, dtype=float))
+        if np.isfinite(rate) and rate > 0:
+            return float(rate)
+    return float("nan")
+
+
+def _candidate_window_sizes(duration_s: float) -> list[float]:
+    base = [30.0, 45.0, 60.0, 75.0, 90.0, 120.0]
+    extra = [0.5 * duration_s, 0.6 * duration_s, 0.7 * duration_s]
+    candidates = {float(round(val, 1)) for val in base + extra}
+    filtered = [c for c in candidates if c > 5.0 and c < 0.9 * duration_s]
+    return sorted(filtered)
+
+
+def _select_window_size(
+    log: LogData,
+    video: ImuBundle,
+    signals: List[str],
+    fs: float,
+    lowpass_hz: float,
+    highpass_hz: float,
+    max_lag_s: float,
+    window_step_s: float,
+    auto_window: bool,
+    window_step_is_default: bool,
+) -> tuple[float, list[float]]:
+    log_duration = _safe_duration(np.asarray(log.time_s, dtype=float))
+    video_duration = _bundle_duration(video)
+    duration_s = min(log_duration, video_duration)
+
+    if duration_s <= 0:
+        return 0.0, []
+
+    candidates = _candidate_window_sizes(duration_s)
+    if not candidates:
+        fallback = max(5.0, 0.6 * duration_s)
+        return min(duration_s, fallback), [min(duration_s, fallback)]
+
+    signals_to_eval = signals[:2] if signals else []
+    best_window = candidates[0]
+    best_score = float("-inf")
+    best_conf = float("-inf")
+    window_scores: dict[float, float] = {}
+    window_confs: dict[float, float] = {}
+
+    for window_s in candidates:
+        for sig in signals_to_eval:
+            try:
+                metrics = _compute_metrics(
+                    log=log,
+                    video=video,
+                    signal=sig,
+                    fs=fs,
+                    window_s=window_s,
+                    lowpass_hz=lowpass_hz,
+                    highpass_hz=highpass_hz,
+                    max_lag_s=max_lag_s,
+                    start_override=None,
+                    auto_window=auto_window,
+                    window_step_s=window_step_s,
+                    window_is_default=True,
+                    window_step_is_default=window_step_is_default,
+                    emit_warnings=False,
+                )
+            except Exception:
+                continue
+
+            score = metrics["score"]
+            if not np.isfinite(score):
+                score = -1.0
+            if not np.isfinite(metrics["stability"]):
+                score -= 0.3
+            if metrics.get("window_count", 1) < 3:
+                score -= 0.5
+
+            conf_score = _confidence_score(
+                metrics["peak"], metrics["psr"], metrics["stability"]
+            )
+
+            if score > window_scores.get(window_s, float("-inf")):
+                window_scores[window_s] = score
+                window_confs[window_s] = conf_score
+
+            if (score > best_score + 1e-6) or (
+                abs(score - best_score) <= 1e-6 and conf_score > best_conf
+            ):
+                best_score = score
+                best_conf = conf_score
+                best_window = window_s
+    if duration_s >= 240.0 and np.isfinite(best_score) and best_score > 0:
+        cutoff_ratio = 0.85
+        cutoff = cutoff_ratio * best_score
+        near_best = [w for w, s in window_scores.items() if s >= cutoff]
+        if near_best:
+            best_window = max(near_best)
+
+    return best_window, candidates
 
 
 def _drop_nan(time_s: np.ndarray, values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -246,7 +381,9 @@ def _compute_window_candidates(
         return [], None
 
     max_var = max(var_list) if var_list else 0.0
-    threshold = max(1e-9, var_threshold_ratio * max_var)
+    var_arr = np.array(var_list, dtype=float) if var_list else np.array([], dtype=float)
+    perc_threshold = float(np.percentile(var_arr, 60)) if var_arr.size else 0.0
+    threshold = max(1e-9, var_threshold_ratio * max_var, perc_threshold)
 
     candidates: list[dict] = []
     best: Optional[dict] = None
@@ -309,6 +446,9 @@ def _compute_metrics(
     start_override: Optional[float],
     auto_window: bool,
     window_step_s: float,
+    window_is_default: bool,
+    window_step_is_default: bool,
+    emit_warnings: bool,
 ) -> dict:
     # Build comparable signals for this requested signal type.
     log_sig = derive_signal(log.imu, signal)
@@ -333,17 +473,38 @@ def _compute_metrics(
         raise ValueError("Not enough data to compute a correlation window.")
     if window_s > max_window:
         new_window = max(1.0, max_window)
-        print(
-            f"Warning: Window {window_s:.1f}s exceeds available data. "
-            f"Shrinking to {new_window:.1f}s."
-        )
+        if emit_warnings:
+            print(
+                f"Warning: Window {window_s:.1f}s exceeds available data. "
+                f"Shrinking to {new_window:.1f}s."
+            )
         window_s = new_window
     if auto_window and window_s >= 0.99 * video_duration:
-        print(
-            "Warning: Auto-window disabled because the window length "
-            "nearly equals the video duration."
-        )
-        auto_window = False
+        if window_is_default:
+            short_window = max(30.0, 0.6 * max_window)
+            if short_window < window_s:
+                if emit_warnings:
+                    print(
+                        f"Warning: Short clip detected. Using window {short_window:.1f}s "
+                        "for auto-window."
+                    )
+                window_s = short_window
+        if window_s >= 0.99 * video_duration:
+            if emit_warnings:
+                print(
+                    "Warning: Auto-window disabled because the window length "
+                    "nearly equals the video duration."
+                )
+            auto_window = False
+
+    if auto_window and window_is_default and window_step_is_default and start_override is None:
+        default_step = max(4.0, window_s * 0.08)
+        if window_step_s > default_step:
+            if emit_warnings:
+                print(
+                    f"Info: Using window step {default_step:.1f}s for short clip auto-window."
+                )
+            window_step_s = default_step
 
     # Filter and normalize to emphasize comparable motion.
     log_filt = filter_signal(log_y_full, fs, lowpass_hz, highpass_hz)
@@ -374,7 +535,8 @@ def _compute_metrics(
                 video_t_full, video_filt, video_start, window_s, fs
             )
             video_aligned = normalize_signal(video_aligned)
-            stability_lag_s = min(30.0, max_lag_s)
+            stability_lag_s = min(30.0, max_lag_s, 0.2 * window_s)
+            stability_lag_s = max(5.0, stability_lag_s)
             _, stability_std = lag_stability(log_norm, video_aligned, fs, stability_lag_s)
 
         score = _score_metrics(peak, psr, stability_std)
@@ -421,8 +583,14 @@ def _compute_metrics(
     # Keep the top scoring windows for robust aggregation.
     scores = np.array([c["score"] for c in candidates], dtype=float)
     order = np.argsort(scores)[::-1]
-    keep_n = max(5, int(0.4 * len(order)))
-    keep_idx = order[:keep_n]
+    best_score = float(scores[order[0]]) if order.size else float("nan")
+    score_cutoff = float(np.percentile(scores, 60)) if scores.size else float("nan")
+    if np.isfinite(best_score):
+        score_cutoff = max(score_cutoff, 0.6 * best_score)
+    keep_idx = [idx for idx in order if scores[idx] >= score_cutoff] if scores.size else []
+    if len(keep_idx) < 5:
+        keep_n = min(len(order), max(5, int(0.4 * len(order))))
+        keep_idx = list(order[:keep_n])
 
     kept = [candidates[i] for i in keep_idx]
     lag_values = np.array([c["lag_global"] for c in kept], dtype=float)
@@ -436,11 +604,12 @@ def _compute_metrics(
     psr = float(np.median(psr_values)) if psr_values.size else float("nan")
     score = _score_metrics(peak, psr, stability_std)
 
-    min_span_s = max(120.0, 0.2 * video_duration) if video_duration > 0 else 120.0
+    min_span_s = max(60.0, 0.2 * video_duration) if video_duration > 0 else 60.0
+    min_windows = max(4, min(8, int(0.4 * len(kept)))) if kept else 4
     drift_info = _estimate_drift_info(
         np.array([c["start_s"] for c in kept], dtype=float),
         lag_values,
-        min_windows=6,
+        min_windows=min_windows,
         min_span_s=min_span_s,
     )
 
@@ -894,6 +1063,7 @@ def _save_plot(time_s: np.ndarray, log: np.ndarray, video: np.ndarray, corr, lag
 
 
 def main(argv: Optional[List[str]] = None) -> None:
+    raw_args = list(argv) if argv is not None else list(sys.argv[1:])
     parser = argparse.ArgumentParser(
         description="Sync telemetry logs to camera video using IMU cross-correlation.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -928,6 +1098,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     parser.add_argument("--max-lag", type=float, default=600.0, help="Max lag to search (seconds)")
     parser.add_argument("--window", type=float, default=360.0, help="Window length (seconds)")
+    parser.add_argument(
+        "--no-auto-window-size",
+        action="store_false",
+        dest="auto_window_size",
+        help="Disable automatic window-size selection.",
+    )
     parser.add_argument("--start", type=float, default=None, help="Window start time (seconds)")
     parser.add_argument(
         "--no-auto-window",
@@ -961,8 +1137,15 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--write-shifted-log", action="store_true", help="Write log_shifted.csv")
     parser.add_argument("--plot", action="store_true", help="Save diagnostic plot to sync_plot.png")
     parser.set_defaults(auto_window=True)
+    parser.set_defaults(auto_window_size=True)
 
     args = parser.parse_args(argv)
+    window_is_default = "--window" not in raw_args
+    window_step_is_default = "--window-step" not in raw_args
+    max_lag_is_default = "--max-lag" not in raw_args
+    fs_is_default = "--fs" not in raw_args
+    lowpass_is_default = "--lowpass-hz" not in raw_args
+    highpass_is_default = "--highpass-hz" not in raw_args
 
     try:
         _status("Resolving input files...")
@@ -1016,6 +1199,72 @@ def main(argv: Optional[List[str]] = None) -> None:
                 print(f"Warning: {warning}")
             selected_signals = [signal]
 
+        if fs_is_default:
+            log_rate = infer_sample_rate(np.asarray(log.time_s, dtype=float))
+            video_rate = _bundle_rate(video)
+            rates = [r for r in (log_rate, video_rate) if np.isfinite(r) and r > 0]
+            if len(rates) == 2:
+                auto_fs = min(50.0, max(20.0, float(np.sqrt(rates[0] * rates[1]))))
+            elif rates:
+                auto_fs = min(50.0, max(20.0, rates[0]))
+            else:
+                auto_fs = args.fs
+            if abs(auto_fs - args.fs) > 1e-6:
+                print(f"Info: Auto sample rate set to {auto_fs:.1f} Hz.")
+                args.fs = auto_fs
+
+        duration_s = min(
+            _safe_duration(np.asarray(log.time_s, dtype=float)),
+            _bundle_duration(video),
+        )
+        if max_lag_is_default and duration_s > 0:
+            auto_max_lag = min(600.0, max(30.0, 0.5 * duration_s))
+            if auto_max_lag < args.max_lag - 1e-6:
+                print(f"Info: Auto max lag set to {auto_max_lag:.1f}s.")
+                args.max_lag = auto_max_lag
+
+        if (
+            args.auto_window_size
+            and window_is_default
+            and args.auto_window
+            and args.start is None
+        ):
+            selected_window, candidates = _select_window_size(
+                log=log,
+                video=video,
+                signals=selected_signals,
+                fs=args.fs,
+                lowpass_hz=args.lowpass_hz,
+                highpass_hz=args.highpass_hz,
+                max_lag_s=args.max_lag,
+                window_step_s=args.window_step,
+                auto_window=args.auto_window,
+                window_step_is_default=window_step_is_default,
+            )
+            if selected_window > 0:
+                args.window = selected_window
+                if candidates:
+                    cand_str = ", ".join(f"{c:.0f}" for c in candidates)
+                    print(
+                        f"Auto window size selected: {selected_window:.1f}s (candidates: {cand_str})"
+                    )
+                else:
+                    print(f"Auto window size selected: {selected_window:.1f}s")
+
+        if lowpass_is_default:
+            auto_lowpass = min(8.0, 0.45 * args.fs)
+            if abs(auto_lowpass - args.lowpass_hz) > 1e-6:
+                print(f"Info: Auto lowpass set to {auto_lowpass:.2f} Hz.")
+                args.lowpass_hz = auto_lowpass
+
+        if highpass_is_default:
+            target_cycles = 3.0
+            auto_highpass = target_cycles / max(10.0, args.window)
+            auto_highpass = max(0.1, min(0.4, auto_highpass))
+            if abs(auto_highpass - args.highpass_hz) > 1e-6:
+                print(f"Info: Auto highpass set to {auto_highpass:.2f} Hz.")
+                args.highpass_hz = auto_highpass
+
         best = None
         best_idx: Optional[int] = None
         metrics_all = []
@@ -1033,6 +1282,9 @@ def main(argv: Optional[List[str]] = None) -> None:
                 start_override=args.start,
                 auto_window=args.auto_window,
                 window_step_s=args.window_step,
+                window_is_default=window_is_default,
+                window_step_is_default=window_step_is_default,
+                emit_warnings=(sig == selected_signals[0]),
             )
             metrics_all.append(metrics)
             if best is None or metrics["score"] > best["score"]:

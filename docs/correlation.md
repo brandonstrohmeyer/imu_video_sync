@@ -16,7 +16,7 @@ We use FFT to compute cross-correlation efficiently. Conceptually it works like 
 That inverse FFT output is the correlation curve. The FFT itself is not the score, it is just a fast way to compute the curve.
 
 ## Window scanning and consensus
-The tool scans many fixed-length windows in the log data (default window is 6 minutes). Each window is compared against the full video signal within the allowed lag range. This is repeated every `--window-step` seconds (default 20 seconds).
+The tool scans many fixed-length windows in the log data. By default it auto-selects a window length based on clip duration; use `--window` to force a specific length or `--no-auto-window-size` to disable auto-selection. Each window is compared against the full video signal within the allowed lag range. This is repeated every `--window-step` seconds (default 20 seconds).
 
 From those windows, the tool keeps the top 40 percent by score (minimum 5 windows). It then computes a weighted median of their lag estimates to produce the final lag.
 

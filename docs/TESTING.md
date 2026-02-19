@@ -31,22 +31,45 @@ This document defines the minimum, standardized tests required for every source 
 - `signal` availability: `available_signals(log) & available_signals(video)` must be non-empty for at least one supported log/video pairing.
 - `correlation` smoke: run `_compute_metrics` on a known-good pair and assert a finite lag.
 - `correlation` regression: when fixtures are stable, pin an expected lag with a tolerance.
+- Integration fixtures are enumerated in `tests/fixtures/manifest.json` and run via a single parameterized test.
+- Manifest entries should include `expected_lag_s` and a `tolerance_s` (default 0.1s).
+- The manifest-driven integration test also covers log/video `sniff`, `load`, `time` checks, and FPS detection for all manifest videos.
 
 ## Fixtures and Environment Variables
 - Small fixtures live in `tests/fixtures/` and are used by default.
-- Keep video fixtures small (target ~20-25 MB) to avoid bloating the repo; re-encode if needed.
+- Keep video fixtures as small as possible while preserving telemetry; re-encode if needed.
 - Large or proprietary fixtures are opt-in via environment variables.
+- New fixtures should follow the naming convention: `<short_id>-<device_type>.<ext>` so video/log pairs are easy to match.
+  - Example: `5f2167b0-gopro-hero8-black.mp4` and `5f2167b0-racebox.csv`.
+- Every integration fixture pair must have a manifest entry.
+- If a full-size copy is kept for reference, suffix it with `.full.mp4` and never reference it from the manifest.
 - Each heavy test must skip gracefully if the fixture is missing.
 - Suggested env vars:
 - `IMU_SYNC_<SOURCE>_CSV` for log files.
 - `IMU_SYNC_<SOURCE>_MP4` for video files.
 
+## Fixture Video Compression (Telemetry-Preserving)
+We keep video fixtures minimal while retaining the telemetry data stream. Audio is always removed.
+- Inspect streams to confirm a telemetry data stream exists (GoPro uses `gpmd`).
+  - `ffprobe -hide_banner -i input.mp4`
+- Re-encode video to H.264, downscale, remove audio, and copy the data stream.
+  - `ffmpeg -i input.mp4 -map 0 -map -0:a -c:v libx264 -crf 36 -preset veryslow -vf "scale=640:-2" -c:d copy -movflags +faststart output.mp4`
+- DJI telemetry tracks (`djmd`/`dbgi`) cannot be re-muxed by ffmpeg; use MP4Box to reattach them after re-encode.
+  - `ffmpeg -i input.mp4 -map 0:0 -c:v libx264 -crf 36 -preset veryslow -vf "scale=640:-2" -movflags +faststart video_only.mp4`
+  - `MP4Box -add video_only.mp4 -add input.mp4#trackID=3 -add input.mp4#trackID=4 -new output.mp4`
+- Verify telemetry extraction from the re-encoded file before committing the fixture.
+  - `python -m telemetry_parser output.mp4`
+- If telemetry is missing, ensure the data stream is mapped and copied (`-map 0` and `-c:d copy`), then retry with a higher resolution or a lower CRF.
+- Target size: as small as possible while telemetry remains intact; typically a few MB for a 2–3 minute clip.
+
 ## Fixture Inventory
 - `tests/fixtures/aim.csv`
-- `tests/fixtures/gopro.mp4`
-- `tests/fixtures/gopro_imu_full.npz`
-- `tests/fixtures/racechrono.csv`
-- `tests/fixtures/dji.mp4`
+- `tests/fixtures/5f2167b0-gopro-hero8-black.mp4`
+- `tests/fixtures/5f2167b0-racebox.csv`
+- `tests/fixtures/c1cba136-dji-osmo-action5-pro.mp4`
+- `tests/fixtures/c1cba136-racechrono.csv`
+- `tests/fixtures/7e4858b7-gopro-hero12-black.mp4`
+- `tests/fixtures/7e4858b7-aim.csv`
 
 ## Performance Expectations
 - `sniff` should be fast and avoid full-file parsing.

@@ -3,14 +3,26 @@
 from typing import Tuple
 
 import numpy as np
-from scipy.signal import fftconvolve
+
+
+def _fft_convolve(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    n = a.size + b.size - 1
+    if n <= 0:
+        return np.array([], dtype=float)
+    n_fft = 1 << (n - 1).bit_length()
+    fa = np.fft.rfft(a, n_fft)
+    fb = np.fft.rfft(b, n_fft)
+    out = np.fft.irfft(fa * fb, n_fft)
+    return out[:n]
 
 
 def estimate_lag(
     signal_a: np.ndarray, signal_b: np.ndarray, fs: float, max_lag_s: float
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
     # Full cross-correlation via FFT (signal_b is reversed for correlation).
-    corr = fftconvolve(signal_a, signal_b[::-1], mode="full")
+    corr = _fft_convolve(signal_a, signal_b[::-1])
     # Lags are indexed in sample units: negative means b is ahead of a.
     lags = np.arange(-signal_b.size + 1, signal_a.size)
 
@@ -21,7 +33,10 @@ def estimate_lag(
     lags = lags[mask]
 
     # Peak correlation indicates the best alignment.
-    idx = int(np.argmax(corr))
+    max_val = float(np.max(corr))
+    eps = max(1e-12, abs(max_val) * 1e-10)
+    candidates = np.where(corr >= max_val - eps)[0]
+    idx = int(candidates[0]) if candidates.size else int(np.argmax(corr))
     lag_samples = int(lags[idx])
 
     # Sign convention: positive lag means GoPro occurs later than AiM.

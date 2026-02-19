@@ -34,10 +34,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - windows-latest
-          - macos-latest
-          - ubuntu-latest
+        include:
+          - os: windows-latest
+            artifact_name: windows-x64
+            platform: windows
+            data_sep: ";"
+          - os: ubuntu-latest
+            artifact_name: linux-x64
+            platform: linux
+            data_sep: ":"
+          - os: macos-13
+            artifact_name: macos-x64
+            platform: macos
+            arch: x64
+            data_sep: ":"
+          - os: macos-14
+            artifact_name: macos-arm64
+            platform: macos
+            arch: arm64
+            data_sep: ":"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -98,8 +113,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install -r requirements-venv312.txt
-          python -m pip install pyinstaller pyinstaller-hooks-contrib
+          python -m pip install -r requirements-build.txt
 
       - name: Ensure build dir
         run: python -c "import pathlib; pathlib.Path('build').mkdir(exist_ok=True)"
@@ -116,30 +130,47 @@ jobs:
           skipped==0 or sys.exit(f'Pytest reported {skipped} skipped test(s).');
           print('No skipped tests.')"
 
-      - name: Build binary
+      - name: Build binary (Windows)
+        if: matrix.platform == 'windows'
         run: >
-          python -m PyInstaller --noconfirm --onefile --console --name IMUVideoSync
+          python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync
+          --icon assets/icon/IMUVideoSync.ico
           --paths src
+          --add-data assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon
+          --add-data assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon
+          --collect-binaries telemetry_parser
+          --collect-data telemetry_parser
+          --collect-submodules telemetry_parser
+          scripts/imu_video_sync_entry.py
+
+      - name: Build binary (macOS/Linux)
+        if: matrix.platform != 'windows'
+        run: >
+          python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync
+          --icon assets/icon/IMUVideoSync.ico
+          --paths src
+          --add-data assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon
+          --add-data assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon
           --collect-binaries telemetry_parser
           --collect-data telemetry_parser
           --collect-submodules telemetry_parser
           scripts/imu_video_sync_entry.py
 
       - name: Prepare artifact (Windows)
-        if: runner.os == 'Windows'
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
           Move-Item -Force dist\IMUVideoSync.exe release\IMUVideoSync-windows-x64.exe
 
       - name: Prepare artifact (macOS)
-        if: runner.os == 'macOS'
+        if: matrix.platform == 'macos'
         run: |
           mkdir -p release
-          mv dist/IMUVideoSync release/IMUVideoSync-macos-x64
+          mv dist/IMUVideoSync release/IMUVideoSync-${{ matrix.artifact_name }}
 
       - name: Prepare artifact (Linux)
-        if: runner.os == 'Linux'
+        if: matrix.platform == 'linux'
         run: |
           mkdir -p release
           mv dist/IMUVideoSync release/IMUVideoSync-linux-x64
@@ -147,13 +178,46 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: IMUVideoSync-${{ matrix.os }}
+          name: IMUVideoSync-${{ matrix.artifact_name }}
+          path: release/*
+
+  macos-universal2:
+    runs-on: macos-14
+    needs:
+      - build
+    steps:
+      - name: Download macOS x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: IMUVideoSync-macos-x64
+          path: macos-x64
+
+      - name: Download macOS arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: IMUVideoSync-macos-arm64
+          path: macos-arm64
+
+      - name: Build universal2 binary
+        run: |
+          mkdir -p release
+          lipo -create \
+            macos-x64/IMUVideoSync-macos-x64 \
+            macos-arm64/IMUVideoSync-macos-arm64 \
+            -output release/IMUVideoSync-macos-universal2
+          lipo -info release/IMUVideoSync-macos-universal2
+
+      - name: Upload universal2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IMUVideoSync-macos-universal2
           path: release/*
 
   publish:
     runs-on: ubuntu-latest
     needs:
       - build
+      - macos-universal2
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4

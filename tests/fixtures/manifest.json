@@ -1,0 +1,30 @@
+[
+  {
+    "id": "hero8-racebox",
+    "video": "5f2167b0-gopro-hero8-black.mp4",
+    "log": "5f2167b0-racebox.csv",
+    "expected_lag_s": 407.58,
+    "tolerance_s": 0.1,
+    "video_device": "gopro_hero8_black",
+    "log_device": "racebox",
+    "min_confidence": 70
+  },
+  {
+    "id": "dji-racechrono",
+    "video": "c1cba136-dji-osmo-action5-pro.mp4",
+    "log": "c1cba136-racechrono.csv",
+    "expected_lag_s": 24.54,
+    "tolerance_s": 0.1,
+    "video_device": "dji_osmo_action5_pro",
+    "log_device": "racechrono"
+  },
+  {
+    "id": "hero12-aim",
+    "video": "7e4858b7-gopro-hero12-black.mp4",
+    "log": "7e4858b7-aim.csv",
+    "expected_lag_s": 376.26,
+    "tolerance_s": 0.1,
+    "video_device": "gopro_hero12_black",
+    "log_device": "aim"
+  }
+]

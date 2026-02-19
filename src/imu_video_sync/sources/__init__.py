@@ -2,6 +2,7 @@ from .registry import LOG_SOURCES, VIDEO_SOURCES, register_source, resolve_sourc
 
 # Import built-in sources to register them.
 from . import aim_csv  # noqa: F401
+from . import racebox_csv  # noqa: F401
 from . import racechrono_csv  # noqa: F401
 from . import telemetry_parser_camera  # noqa: F401
 
