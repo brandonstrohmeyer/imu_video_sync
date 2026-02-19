@@ -80,14 +80,14 @@ jobs:
               if not sha:
                   sys.exit("Missing workflow_run head sha")
               tags = subprocess.check_output(["git", "tag", "--points-at", sha], text=True).splitlines()
-              tags = [t for t in tags if re.match(r"^v\\d+\\.\\d+\\.\\d+$", t)]
+              tags = [t for t in tags if re.match(r"^v\d+\.\d+\.\d+$", t)]
               tag = tags[0] if tags else None
 
           if not tag:
               sys.exit("Unable to resolve release tag")
 
           tag = tag.replace("\\n", "").replace("\\r", "").strip()
-          if not re.match(r"^v\\d+\\.\\d+\\.\\d+$", tag):
+          if not re.match(r"^v\d+\.\d+\.\d+$", tag):
               sys.exit(f"Resolved tag is invalid: {tag!r}")
           print("Resolved tag:", tag)
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
