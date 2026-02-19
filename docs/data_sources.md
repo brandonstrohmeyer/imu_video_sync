@@ -2,6 +2,9 @@
 
 This tool uses modular, in-repo sources for both video and log inputs. Each source is responsible for producing a common IMU bundle so the correlation pipeline stays DRY.
 
+## Auto-Detection (`sniff`)
+Each source implements a `sniff(path)` method that returns a confidence score between `0.0` and `1.0`. When you do not force a source, the loader calls `sniff()` on every registered source and picks the one with the highest score. Use `--video-source` or `--log-source` to override this selection if needed.
+
 ## Video Sources
 
 ### `telemetry_parser` (built-in)
@@ -28,6 +31,11 @@ Some clips may lack gyro or accel. The tool falls back to whatever is available.
 ### `racechrono_csv` (built-in)
 - Parses RaceChrono CSV exports with dynamic headers.
 - Detects `Time (s)` (or `Elapsed time (s)`) and IMU columns labeled `*acc` and `*gyro`.
+- Normalizes timestamps to seconds from the start of the log.
+
+### `racebox_csv` (built-in)
+- Parses RaceBox CSV exports.
+- Detects `Time` plus `GyroX/GyroY/GyroZ` and `X/Y/Z` accel axes.
 - Normalizes timestamps to seconds from the start of the log.
 
 ## Time normalization

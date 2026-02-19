@@ -1,7 +1,10 @@
 # Build-only requirements for IMUVideoSync.exe (resolved from vendor/wheels)
 numpy
 pandas
-scipy
+maturin==1.12.2
+packaging==26.0
+setuptools==82.0.0
+wheel==0.46.3
 pyinstaller
 pyinstaller-hooks-contrib
 pytest

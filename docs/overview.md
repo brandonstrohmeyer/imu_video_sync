@@ -21,7 +21,10 @@ This is orientation-agnostic, so it still matches well even if axes do not line 
 Both the video and the data log capture the same physical motion. The IMU signals have similar patterns when the car turns, brakes, and accelerates. Cross-correlation finds the time shift that best matches those patterns.
 
 ## Window scanning (not random)
-The tool does not rely on one window or a lap length. It scans many fixed-length windows across the log, scores each alignment, and then builds a consensus from the best windows. If the requested window is too long for the data, it is auto-shrunk; if the window is effectively the full clip, the tool falls back to a single-window estimate.
+The tool does not rely on one window or a lap length. It scans many fixed-length windows across the log, scores each alignment, and then builds a consensus from the best windows. By default it auto-selects a window length based on the clip duration; use `--window` to force a specific length or `--no-auto-window-size` to disable auto-selection. If the requested window is too long for the data, it is auto-shrunk; if the window is effectively the full clip, the tool falls back to a single-window estimate.
+
+## Auto-tuned defaults
+When you use the defaults, the CLI also auto-tunes `--max-lag`, `--fs`, and filter cutoffs to better fit the clip length and sample rates.
 
 ## Outputs
 The CLI prints a sync summary and a RaceRender-friendly offset line. Optional outputs include a video IMU CSV, a shifted log CSV, and a diagnostic plot.

@@ -1,6 +1,6 @@
 ﻿# imu-video-sync
 
-Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. It accurately estimates the time offset by comparing motion patterns and prints an offset instruction that can be used by your video editor of choice including RaceRender.
+IMUVideoSync is a tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. It accurately estimates the time offset by comparing motion patterns and prints an offset instruction that can be used by your video editor of choice including RaceRender.
 
 
 ## Supported Devices
@@ -10,16 +10,19 @@ Command-line tool that time-syncs a telemetry log (CSV) to a camera video (MP4) 
 - DJI Osmo Action 4+
 
 **Loggers**
-- AiM CSV (e.g., XLog, Solo 2)
-- RaceChrono CSV (phone IMU)
+- AiM
+- RaceBox
+- RaceChrono
+
+To request support for a new device, please [open an issue](https://github.com/brandonstrohmeyer/imu_video_sync/issues/new?template=new-device-support.yml).
 
 ## Installation
 1. Go to the GitHub [Releases](https://github.com/brandonstrohmeyer/imu_video_sync/releases) page.
 2. Download the binary for your OS:
    - Windows: `IMUVideoSync-windows-x64.exe`
-   - macOS: `IMUVideoSync-macos-x64`
+   - macOS: `IMUVideoSync-macos-universal2` (or `IMUVideoSync-macos-x64`)
    - Linux: `IMUVideoSync-linux-x64`
-3. Run the binary from a terminal.
+3. Run the binary from a terminal, or double-click it on Windows/macOS to launch the GUI.
 
 ## Usage
 
@@ -43,6 +46,17 @@ Lag (frames)                    +1471
 Timecode offset                 +00:00:24;32
 Video offset within project     00:00:24.540
 ```
+
+## GUI (Windows and macOS)
+The Windows and macOS builds include a minimal GUI. Double-click the binary to launch the GUI. If you run the binary from a terminal, it stays in CLI mode.
+
+![IMUVideoSync GUI screenshot](assets/docs/imu-screenshot.png)
+
+The GUI lets you pick:
+- Video file (MP4)
+- Log file (CSV)
+
+Then click **Generate Offset** to run the same processing as the CLI and view the output in the window.
 
 ## Outputs
 - **Signal Candidates** table (includes the selected signal).

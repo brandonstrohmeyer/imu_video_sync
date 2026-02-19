@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_dynamic_libs
 from PyInstaller.utils.hooks import collect_submodules
 
-datas = []
+datas = [('assets\\\\icon\\\\IMUVideoSync.ico', 'assets\\\\icon'), ('assets\\\\icon\\\\IMUVideoSync.png', 'assets\\\\icon')]
 binaries = []
 hiddenimports = []
 datas += collect_data_files('telemetry_parser')
@@ -20,7 +20,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['scipy'],
     noarchive=False,
     optimize=0,
 )
@@ -39,10 +39,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['assets\\icon\\IMUVideoSync.ico'],
 )

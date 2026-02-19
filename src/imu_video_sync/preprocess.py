@@ -3,7 +3,6 @@
 from typing import Tuple
 
 import numpy as np
-from scipy.signal import butter, filtfilt
 
 
 def infer_sample_rate(time_s: np.ndarray) -> float:
@@ -152,22 +151,30 @@ def trim_window(
 def filter_signal(
     values: np.ndarray, fs: float, lowpass_hz: float, highpass_hz: float = 0.0
 ) -> np.ndarray:
-    # Use a 4th-order Butterworth filter in low/high/band-pass mode.
-    if lowpass_hz is not None and lowpass_hz > 0.0 and lowpass_hz < fs / 2.0:
-        if highpass_hz is not None and highpass_hz > 0.0:
-            if highpass_hz >= lowpass_hz:
-                raise ValueError("High-pass cutoff must be below low-pass cutoff.")
-            wn = [highpass_hz / (fs / 2.0), lowpass_hz / (fs / 2.0)]
-            b, a = butter(4, wn, btype="band")
-        else:
-            b, a = butter(4, lowpass_hz / (fs / 2.0), btype="low")
-        return filtfilt(b, a, values)
+    if lowpass_hz is not None and highpass_hz is not None and highpass_hz > 0.0 and lowpass_hz > 0.0:
+        if highpass_hz >= lowpass_hz:
+            raise ValueError("High-pass cutoff must be below low-pass cutoff.")
 
-    if highpass_hz is not None and highpass_hz > 0.0 and highpass_hz < fs / 2.0:
-        b, a = butter(4, highpass_hz / (fs / 2.0), btype="high")
-        return filtfilt(b, a, values)
+    nyq = fs / 2.0
+    apply_low = lowpass_hz is not None and lowpass_hz > 0.0 and lowpass_hz < nyq
+    apply_high = highpass_hz is not None and highpass_hz > 0.0 and highpass_hz < nyq
+    if not apply_low and not apply_high:
+        return values
 
-    return values
+    values = np.asarray(values, dtype=float)
+    n = values.size
+    if n == 0:
+        return values
+
+    freqs = np.fft.rfftfreq(n, d=1.0 / fs)
+    spectrum = np.fft.rfft(values)
+    mask = np.ones_like(freqs, dtype=bool)
+    if apply_low:
+        mask &= freqs <= lowpass_hz
+    if apply_high:
+        mask &= freqs >= highpass_hz
+    spectrum[~mask] = 0.0
+    return np.fft.irfft(spectrum, n)
 
 
 def normalize_signal(values: np.ndarray) -> np.ndarray:

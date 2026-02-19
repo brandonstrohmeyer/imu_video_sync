@@ -14,8 +14,11 @@ The CLI is in `src/imu_video_sync/cli.py`.
 ## Windowing behavior
 - By default, the tool scans multiple windows and builds a consensus lag.
 - Use `--no-auto-window` to analyze a single window.
-- `--window` sets the window length (default 360 seconds).
+- By default, the tool auto-selects a window length based on clip duration.
+- Use `--window` to force a specific window length.
+- Use `--no-auto-window-size` to disable auto window-size selection.
 - `--window-step` controls how far each window shifts (default 20 seconds).
+- When using defaults, the tool may reduce `--window-step` on short clips to increase window count.
 - If the requested window is longer than the available data, it is automatically shrunk.
 - If the window is effectively the full video length, auto-windowing is disabled and the tool falls back to single-window mode.
 
@@ -25,3 +28,9 @@ For a session of length `T`, window length `W`, and step `S`, window count is ro
 
 ## Outputs
 The CLI prints a summary and a RaceRender-friendly offset line. Optional files are created only if you pass their flags: `--write-video-imu-csv`, `--write-shifted-log`, or `--plot`.
+
+## Auto-tuned defaults
+When you do not override these flags, the CLI auto-tunes a few parameters to improve accuracy:
+- `--max-lag` is reduced based on clip duration.
+- `--fs` (resample rate) is reduced based on detected sample rates.
+- `--highpass-hz` / `--lowpass-hz` are adjusted based on clip length and sample rate.

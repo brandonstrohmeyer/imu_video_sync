@@ -1,5 +1,3 @@
 telemetry-parser @ git+https://github.com/brandonstrohmeyer/telemetry-parser.git@05eb7dddeea6602b9fd07eaf2fb221849cae5268#subdirectory=bin/python-module
 numpy
 pandas
-scipy
-pytest

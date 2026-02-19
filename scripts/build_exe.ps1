@@ -11,6 +11,16 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
+$version = "dev"
+try {
+    $version = (git describe --tags --abbrev=0).Trim()
+} catch {
+    $version = "dev"
+}
+$versionFile = Join-Path $repoRoot "src\\imu_video_sync\\_version.py"
+$versionContent = "__version__ = `"$version`"`n"
+Set-Content -Path $versionFile -Value $versionContent -Encoding UTF8
+
 if (-not (Test-Path $PythonExe)) {
     throw "Python 3.12 venv not found at $PythonExe. Create .venv312 or pass -PythonExe."
 }
@@ -40,8 +50,7 @@ if ($Offline) {
 } else {
     Write-Host "Online mode: installing from PyPI/git."
     & $venvPip install -r requirements.txt
-    & $venvPip install -r requirements-venv312.txt
-    & $venvPip install pyinstaller pyinstaller-hooks-contrib pytest
+    & $venvPip install -r requirements-build.txt
 }
 
 if (-not (Test-Path $venvPyInstaller)) {
@@ -71,9 +80,13 @@ Write-Host "Building IMUVideoSync.exe..."
 $pyinstallerArgs = @(
     "--noconfirm",
     "--onefile",
-    "--console",
+    "--noconsole",
+    "--exclude-module", "scipy",
+    "--icon", "assets\\icon\\IMUVideoSync.ico",
     "--name", "IMUVideoSync",
     "--paths", "src",
+    "--add-data", "assets\\icon\\IMUVideoSync.ico;assets\\icon",
+    "--add-data", "assets\\icon\\IMUVideoSync.png;assets\\icon",
     "--collect-binaries", "telemetry_parser",
     "--collect-data", "telemetry_parser",
     "--collect-submodules", "telemetry_parser",
@@ -81,6 +94,11 @@ $pyinstallerArgs = @(
 )
 if ($Clean) {
     $pyinstallerArgs = @("--clean") + $pyinstallerArgs
+}
+
+if (Test-Path "dist\\IMUVideoSync") {
+    Write-Host "Removing stale dist\\IMUVideoSync folder..."
+    Remove-Item -Recurse -Force "dist\\IMUVideoSync"
 }
 & $venvPyInstaller @pyinstallerArgs
 
