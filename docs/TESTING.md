@@ -68,6 +68,8 @@ We keep video fixtures minimal while retaining the telemetry data stream. Audio 
 - `tests/fixtures/5f2167b0-racebox.csv`
 - `tests/fixtures/c1cba136-dji-osmo-action5-pro.mp4`
 - `tests/fixtures/c1cba136-racechrono.csv`
+- `tests/fixtures/98da501d-dji-nano.mp4`
+- `tests/fixtures/98da501d-racechrono.csv`
 - `tests/fixtures/7e4858b7-gopro-hero12-black.mp4`
 - `tests/fixtures/7e4858b7-aim.csv`
 

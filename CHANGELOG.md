@@ -1,5 +1,10 @@
 # CHANGELOG.md
 
+## v0.3.0
+**Added**
+- Camera
+  - DJI Nano 
+
 ## v0.2.0
 **Added**
 - Minimal GUI with Windows/macOS launch support.

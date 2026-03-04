@@ -26,5 +26,14 @@
     "tolerance_s": 0.1,
     "video_device": "gopro_hero12_black",
     "log_device": "aim"
+  },
+  {
+    "id": "dji-nano-racechrono",
+    "video": "98da501d-dji-nano.mp4",
+    "log": "98da501d-racechrono.csv",
+    "expected_lag_s": 9.44,
+    "tolerance_s": 0.1,
+    "video_device": "dji_nano",
+    "log_device": "racechrono"
   }
 ]
