@@ -86,7 +86,8 @@ jobs:
           if not tag:
               sys.exit("Unable to resolve release tag")
 
-          tag = tag.replace("\\n", "").replace("\\r", "").strip()
+          tag = tag.replace("\\n", "").replace("\\r", "")
+          tag = tag.replace("\n", "").replace("\r", "").strip()
           if not re.match(r"^v\d+\.\d+\.\d+$", tag):
               sys.exit(f"Resolved tag is invalid: {tag!r}")
           print("Resolved tag:", tag)

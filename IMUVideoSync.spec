@@ -1,7 +1,4 @@
 # -*- mode: python ; coding: utf-8 -*-
-import os
-import sys
-
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_dynamic_libs
 from PyInstaller.utils.hooks import collect_submodules
@@ -29,17 +26,6 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-icon_path = os.path.join("assets", "icon", "IMUVideoSync.ico")
-if sys.platform == "darwin":
-    icns_candidates = [
-        os.path.join("build", "IMUVideoSync.icns"),
-        os.path.join("assets", "icon", "IMUVideoSync.icns"),
-    ]
-    for candidate in icns_candidates:
-        if os.path.exists(candidate):
-            icon_path = candidate
-            break
-
 exe = EXE(
     pyz,
     a.scripts,
@@ -59,5 +45,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=[icon_path],
+    icon=['assets\\icon\\IMUVideoSync.ico'],
 )
