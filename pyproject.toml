@@ -12,7 +12,7 @@ license = {text = "MIT"}
 keywords = ["telemetry", "imu", "sync", "video", "camera", "logger"]
 authors = [{name = "Codex"}]
 dependencies = [
-  "telemetry-parser @ git+https://github.com/brandonstrohmeyer/telemetry-parser.git@05eb7dddeea6602b9fd07eaf2fb221849cae5268#subdirectory=bin/python-module",
+  "telemetry-parser @ git+https://github.com/brandonstrohmeyer/telemetry-parser.git@fdb2e889b8d2b223aeb1b6779b4c1b11aa01af52#subdirectory=bin/python-module",
   "numpy",
   "pandas",
   "scipy",
