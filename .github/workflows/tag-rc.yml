@@ -23,6 +23,25 @@ jobs:
       - name: Fetch tags
         run: git fetch --tags --force
 
+      - name: Ensure release workflow supports RC tags
+        run: |
+          if [ ! -f .github/workflows/release.yml ]; then
+            echo "Missing .github/workflows/release.yml on this branch."
+            exit 1
+          fi
+          if ! grep -Fq "v*.*.*-rc.*" .github/workflows/release.yml; then
+            echo "release.yml does not include RC tag trigger (v*.*.*-rc.*)."
+            echo "Merge master into this rc branch to pick up release workflow changes."
+            exit 1
+          fi
+
+      - name: Ensure PAT available
+        run: |
+          if [ -z "${{ secrets.RELEASE_TAG_PAT }}" ]; then
+            echo "Missing RELEASE_TAG_PAT secret"
+            exit 1
+          fi
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
