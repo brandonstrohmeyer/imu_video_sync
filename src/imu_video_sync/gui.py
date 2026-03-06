@@ -6,12 +6,21 @@ import re
 import sys
 import threading
 import traceback
+import webbrowser
 from pathlib import Path
 
 from . import __version__
+from . import update_check
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, scrolledtext
+    from tkinter import ttk as ttk_std
+    try:
+        import ttkbootstrap as ttk
+        _USING_TTKBOOTSTRAP = True
+    except Exception:
+        ttk = ttk_std
+        _USING_TTKBOOTSTRAP = False
 except Exception as exc:  # pragma: no cover - only triggered when Tk is missing
     raise RuntimeError(
         "Tkinter is not available. Install a Python build that includes Tk (Tcl/Tk runtime)."
@@ -48,40 +57,57 @@ class _GuiApp:
         self._queue: queue.Queue = queue.Queue()
         self._done_sentinel = object()
         self._running = False
+        self._update_inflight = False
 
+        self._build_menu()
         self._build_ui()
         self._set_window_icon()
         self.root.after(75, self._poll_output)
+        self._schedule_update_check()
+
+    def _build_menu(self) -> None:
+        menubar = tk.Menu(self.root)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+        about_menu = tk.Menu(menubar, tearoff=0)
+        about_menu.add_command(label="About IMU Video Sync...", command=self._show_about)
+        about_menu.add_separator()
+        about_menu.add_command(
+            label="Check for updates", command=lambda: self._start_update_check(manual=True)
+        )
+        menubar.add_cascade(label="About", menu=about_menu)
+        self.root.config(menu=menubar)
 
     def _build_ui(self) -> None:
-        frame = tk.Frame(self.root, padx=12, pady=12)
+        frame = ttk.Frame(self.root, padding=12)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        tk.Label(frame, text="Video (MP4)").grid(row=0, column=0, sticky="w")
-        video_entry = tk.Entry(frame, textvariable=self.video_var)
+        ttk.Label(frame, text="Video (MP4)").grid(row=0, column=0, sticky="w")
+        video_entry = ttk.Entry(frame, textvariable=self.video_var)
         video_entry.grid(row=1, column=0, sticky="we", padx=(0, 8))
-        tk.Button(frame, text="Browse...", command=self._browse_video).grid(
+        ttk.Button(frame, text="Browse...", command=self._browse_video).grid(
             row=1, column=1, sticky="we"
         )
 
-        tk.Label(frame, text="Log (CSV)").grid(row=2, column=0, sticky="w", pady=(10, 0))
-        log_entry = tk.Entry(frame, textvariable=self.log_var)
+        ttk.Label(frame, text="Log (CSV)").grid(row=2, column=0, sticky="w", pady=(10, 0))
+        log_entry = ttk.Entry(frame, textvariable=self.log_var)
         log_entry.grid(row=3, column=0, sticky="we", padx=(0, 8))
-        tk.Button(frame, text="Browse...", command=self._browse_log).grid(
+        ttk.Button(frame, text="Browse...", command=self._browse_log).grid(
             row=3, column=1, sticky="we"
         )
 
-        self.run_button = tk.Button(frame, text="Generate Offset", command=self._start_run)
+        self.run_button = ttk.Button(frame, text="Generate Offset", command=self._start_run)
         self.run_button.grid(row=4, column=0, sticky="w", pady=(12, 0))
 
-        tk.Label(frame, textvariable=self.status_var).grid(row=4, column=1, sticky="e")
+        ttk.Label(frame, textvariable=self.status_var).grid(row=4, column=1, sticky="e")
 
         font_name = "Consolas" if sys.platform.startswith("win") else "TkFixedFont"
         self.output = scrolledtext.ScrolledText(
             frame, height=18, wrap="none", state="disabled", font=(font_name, 10)
         )
         self.output.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
-        hbar = tk.Scrollbar(frame, orient="horizontal", command=self.output.xview)
+        hbar = ttk.Scrollbar(frame, orient="horizontal", command=self.output.xview)
         hbar.grid(row=6, column=0, columnspan=2, sticky="we")
         self.output.configure(xscrollcommand=hbar.set)
         try:
@@ -142,6 +168,59 @@ class _GuiApp:
         self._running = running
         self.run_button.configure(state="disabled" if running else "normal")
         self.status_var.set("Running..." if running else "Ready")
+
+    def _show_about(self) -> None:
+        messagebox.showinfo("About IMU Video Sync", f"IMU Video Sync {__version__}")
+
+    def _schedule_update_check(self) -> None:
+        if update_check.is_disabled():
+            return
+        self.root.after(300, lambda: self._start_update_check(manual=False))
+
+    def _start_update_check(self, *, manual: bool) -> None:
+        if update_check.is_disabled():
+            if manual:
+                messagebox.showinfo(
+                    "Update Check Disabled",
+                    "Update checks are disabled via IMU_VIDEO_SYNC_DISABLE_UPDATE_CHECK.",
+                )
+            return
+        if self._update_inflight:
+            if manual:
+                messagebox.showinfo("Update Check", "An update check is already running.")
+            return
+
+        self._update_inflight = True
+
+        def worker() -> None:
+            result = update_check.check_for_updates(include_prereleases=True, timeout_s=2.5)
+            self.root.after(0, lambda: self._handle_update_result(result, manual))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _handle_update_result(
+        self, result: update_check.UpdateResult | None, manual: bool
+    ) -> None:
+        self._update_inflight = False
+        if result is None:
+            if manual:
+                messagebox.showinfo(
+                    "Update Check", "Unable to check for updates right now."
+                )
+            return
+        if result.update_available:
+            message = (
+                f"A new version is available: {result.latest_version}\n"
+                f"You are running {result.current_version}.\n\n"
+                "Open the download page?"
+            )
+            if messagebox.askyesno("Update Available", message):
+                webbrowser.open(result.release_url)
+            return
+        if manual:
+            messagebox.showinfo(
+                "Up to Date", f"You're up to date ({result.current_version})."
+            )
 
     def _append_output(self, text: str) -> None:
         self.output.configure(state="normal")
@@ -209,6 +288,9 @@ class _GuiApp:
 
 
 def main() -> None:
-    root = tk.Tk()
+    if _USING_TTKBOOTSTRAP:
+        root = ttk.Window(themename="lumen")
+    else:
+        root = tk.Tk()
     _GuiApp(root)
     root.mainloop()

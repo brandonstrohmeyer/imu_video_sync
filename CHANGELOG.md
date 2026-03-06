@@ -4,6 +4,9 @@
 **Added**
 - IMUVideoSync will now check to see if updates are available when opened
 
+**Changed**
+- GUI is less ugly
+
 ## v0.3.0
 **Added**
 - Camera
