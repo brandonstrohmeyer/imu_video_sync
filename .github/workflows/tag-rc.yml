@@ -65,5 +65,6 @@ jobs:
             echo "Tag $TAG already exists."
             exit 0
           fi
+          git remote set-url origin "https://x-access-token:${{ secrets.RELEASE_TAG_PAT }}@github.com/${{ github.repository }}.git"
           git tag "$TAG"
           git push origin "$TAG"
