@@ -146,3 +146,9 @@ If values are "bad," try:
 - Use `--video-source` or `--log-source` to force a specific backend by name.
 - RaceRender can only apply positive offsets. The tool prints which input to offset accordingly.
 - Camera metadata extraction uses `telemetry-parser`.
+
+## Release Process
+1. Create an RC branch from `master` named `rc-vX.Y.Z`.
+2. Merge feature PRs into the RC branch; each merge creates a prerelease tag `vX.Y.Z-rc.N` and publishes a prerelease build.
+3. Merge the RC branch into `master` to create the final `vX.Y.Z` tag and publish the full release.
+4. RC binaries embed the full prerelease tag (for example, `v1.2.3-rc.1`) in `--version` output and the GUI title.
