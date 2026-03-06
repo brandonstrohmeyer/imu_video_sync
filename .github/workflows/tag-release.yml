@@ -13,7 +13,7 @@ permissions:
 jobs:
   tag:
     runs-on: ubuntu-latest
-    if: ${{ github.event.pull_request.merged == true }}
+    if: ${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'rc-') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
       - name: Read version from CHANGELOG.md
         id: changelog
         run: |
-          TAG=$(python scripts/get_changelog_version.py)
+          TAG=$(python scripts/get_changelog_version.py | tr -d '\r\n')
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Create tag if missing
