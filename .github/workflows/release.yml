@@ -81,8 +81,8 @@ jobs:
               if not sha:
                   sys.exit("Missing workflow_run head sha")
               tags = subprocess.check_output(["git", "tag", "--points-at", sha], text=True).splitlines()
-          tags = [t for t in tags if re.match(r"^v\d+\.\d+\.\d+(-rc\.\d+)?$", t)]
-          tag = tags[0] if tags else None
+              tags = [t for t in tags if re.match(r"^v\d+\.\d+\.\d+(-rc\.\d+)?$", t)]
+              tag = tags[0] if tags else None
 
           if not tag:
               sys.exit("Unable to resolve release tag")

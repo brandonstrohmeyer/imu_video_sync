@@ -19,6 +19,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Ensure release workflow present
+        run: |
+          if [ ! -f .github/workflows/release.yml ]; then
+            echo "Missing .github/workflows/release.yml on this branch."
+            exit 1
+          fi
+          if ! grep -Fq "v*.*.*" .github/workflows/release.yml; then
+            echo "release.yml does not include tag trigger (v*.*.*)."
+            exit 1
+          fi
+
+      - name: Ensure PAT available
+        run: |
+          if [ -z "${{ secrets.RELEASE_TAG_PAT }}" ]; then
+            echo "Missing RELEASE_TAG_PAT secret"
+            exit 1
+          fi
 
       - name: Ensure release workflow present
         run: |
@@ -49,6 +68,7 @@ jobs:
             echo "Tag $TAG already exists."
             exit 0
           fi
+          git config --local --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${{ secrets.RELEASE_TAG_PAT }}@github.com/${{ github.repository }}.git"
           git tag "$TAG"
           git push origin "$TAG"
