@@ -1,5 +1,9 @@
 # CHANGELOG.md
 
+## v0.4.0
+**Added**
+- IMUVideoSync will now check to see if updates are available when opened
+
 ## v0.3.0
 **Added**
 - Camera
