@@ -1,3 +1,4 @@
 telemetry-parser @ git+https://github.com/brandonstrohmeyer/telemetry-parser.git@fdb2e889b8d2b223aeb1b6779b4c1b11aa01af52#subdirectory=bin/python-module
 numpy
 pandas
+ttkbootstrap

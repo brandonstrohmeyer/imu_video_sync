@@ -14,6 +14,13 @@ from . import update_check
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, scrolledtext
+    from tkinter import ttk as ttk_std
+    try:
+        import ttkbootstrap as ttk
+        _USING_TTKBOOTSTRAP = True
+    except Exception:
+        ttk = ttk_std
+        _USING_TTKBOOTSTRAP = False
 except Exception as exc:  # pragma: no cover - only triggered when Tk is missing
     raise RuntimeError(
         "Tkinter is not available. Install a Python build that includes Tk (Tcl/Tk runtime)."
@@ -73,34 +80,34 @@ class _GuiApp:
         self.root.config(menu=menubar)
 
     def _build_ui(self) -> None:
-        frame = tk.Frame(self.root, padx=12, pady=12)
+        frame = ttk.Frame(self.root, padding=12)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        tk.Label(frame, text="Video (MP4)").grid(row=0, column=0, sticky="w")
-        video_entry = tk.Entry(frame, textvariable=self.video_var)
+        ttk.Label(frame, text="Video (MP4)").grid(row=0, column=0, sticky="w")
+        video_entry = ttk.Entry(frame, textvariable=self.video_var)
         video_entry.grid(row=1, column=0, sticky="we", padx=(0, 8))
-        tk.Button(frame, text="Browse...", command=self._browse_video).grid(
+        ttk.Button(frame, text="Browse...", command=self._browse_video).grid(
             row=1, column=1, sticky="we"
         )
 
-        tk.Label(frame, text="Log (CSV)").grid(row=2, column=0, sticky="w", pady=(10, 0))
-        log_entry = tk.Entry(frame, textvariable=self.log_var)
+        ttk.Label(frame, text="Log (CSV)").grid(row=2, column=0, sticky="w", pady=(10, 0))
+        log_entry = ttk.Entry(frame, textvariable=self.log_var)
         log_entry.grid(row=3, column=0, sticky="we", padx=(0, 8))
-        tk.Button(frame, text="Browse...", command=self._browse_log).grid(
+        ttk.Button(frame, text="Browse...", command=self._browse_log).grid(
             row=3, column=1, sticky="we"
         )
 
-        self.run_button = tk.Button(frame, text="Generate Offset", command=self._start_run)
+        self.run_button = ttk.Button(frame, text="Generate Offset", command=self._start_run)
         self.run_button.grid(row=4, column=0, sticky="w", pady=(12, 0))
 
-        tk.Label(frame, textvariable=self.status_var).grid(row=4, column=1, sticky="e")
+        ttk.Label(frame, textvariable=self.status_var).grid(row=4, column=1, sticky="e")
 
         font_name = "Consolas" if sys.platform.startswith("win") else "TkFixedFont"
         self.output = scrolledtext.ScrolledText(
             frame, height=18, wrap="none", state="disabled", font=(font_name, 10)
         )
         self.output.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(12, 0))
-        hbar = tk.Scrollbar(frame, orient="horizontal", command=self.output.xview)
+        hbar = ttk.Scrollbar(frame, orient="horizontal", command=self.output.xview)
         hbar.grid(row=6, column=0, columnspan=2, sticky="we")
         self.output.configure(xscrollcommand=hbar.set)
         try:
@@ -281,6 +288,9 @@ class _GuiApp:
 
 
 def main() -> None:
-    root = tk.Tk()
+    if _USING_TTKBOOTSTRAP:
+        root = ttk.Window(themename="lumen")
+    else:
+        root = tk.Tk()
     _GuiApp(root)
     root.mainloop()
