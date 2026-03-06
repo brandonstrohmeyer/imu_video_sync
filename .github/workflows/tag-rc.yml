@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Fetch tags
         run: git fetch --tags --force
@@ -84,6 +85,7 @@ jobs:
             echo "Tag $TAG already exists."
             exit 0
           fi
+          git config --local --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${{ secrets.RELEASE_TAG_PAT }}@github.com/${{ github.repository }}.git"
           git tag "$TAG"
           git push origin "$TAG"
