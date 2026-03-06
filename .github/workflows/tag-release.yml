@@ -20,6 +20,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Ensure release workflow present
+        run: |
+          if [ ! -f .github/workflows/release.yml ]; then
+            echo "Missing .github/workflows/release.yml on this branch."
+            exit 1
+          fi
+          if ! grep -Fq "v*.*.*" .github/workflows/release.yml; then
+            echo "release.yml does not include tag trigger (v*.*.*)."
+            exit 1
+          fi
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
