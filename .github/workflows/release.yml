@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    name: Build (${{ matrix.platform }} / ${{ matrix.artifact_name }})
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
@@ -203,6 +204,7 @@ jobs:
           path: release/*
 
   macos-universal2:
+    name: Build (macos-universal2)
     runs-on: macos-14
     needs:
       - build
@@ -235,11 +237,33 @@ jobs:
           path: release/*
 
   publish:
+    name: Publish Release
     runs-on: ubuntu-latest
     needs:
       - build
       - macos-universal2
     steps:
+      - name: Normalize release tag
+        id: publish_tag
+        shell: bash
+        env:
+          RAW_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+
+          tag = os.environ.get("RAW_TAG", "")
+          tag = tag.replace("\\n", "").replace("\\r", "")
+          tag = tag.replace("\n", "").replace("\r", "").strip()
+          if not re.match(r"^v\d+\.\d+\.\d+(-rc\.\d+)?$", tag):
+              sys.exit(f"Normalized tag is invalid: {tag!r}")
+          print("Normalized tag:", tag)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"tag={tag}\n")
+          PY
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -248,8 +272,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: ${{ needs.build.outputs.tag }}
+          tag_name: ${{ steps.publish_tag.outputs.tag }}
+          name: ${{ steps.publish_tag.outputs.tag }}
           files: release-artifacts/**/*
           draft: false
-          prerelease: ${{ contains(needs.build.outputs.tag, '-rc.') }}
+          prerelease: ${{ contains(steps.publish_tag.outputs.tag, '-rc.') }}
