@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from . import __version__
+from . import update_check
 from .core.models import ImuBundle, LogData
 from .core.signals import SIGNAL_PRIORITY, available_signals, choose_signal, derive_signal
 from .correlate import estimate_lag, lag_stability, peak_to_sidelobe
@@ -27,6 +28,14 @@ def _parse_cols(value: Optional[str]) -> Optional[List[str]]:
     if value is None:
         return None
     return [col.strip() for col in value.split(",") if col.strip()]
+
+
+def _maybe_print_update_notice() -> None:
+    if update_check.is_disabled():
+        return
+    result = update_check.check_for_updates(include_prereleases=True, timeout_s=2.5)
+    if result and result.update_available:
+        print(update_check.format_update_notice(result), file=sys.stderr)
 
 
 def _parse_kv_args(values: List[str]) -> dict:
@@ -1147,6 +1156,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.set_defaults(auto_window_size=True)
 
     args = parser.parse_args(argv)
+    _maybe_print_update_notice()
     window_is_default = "--window" not in raw_args
     window_step_is_default = "--window-step" not in raw_args
     max_lag_is_default = "--max-lag" not in raw_args

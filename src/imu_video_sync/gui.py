@@ -6,9 +6,11 @@ import re
 import sys
 import threading
 import traceback
+import webbrowser
 from pathlib import Path
 
 from . import __version__
+from . import update_check
 try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, scrolledtext
@@ -48,10 +50,27 @@ class _GuiApp:
         self._queue: queue.Queue = queue.Queue()
         self._done_sentinel = object()
         self._running = False
+        self._update_inflight = False
 
+        self._build_menu()
         self._build_ui()
         self._set_window_icon()
         self.root.after(75, self._poll_output)
+        self._schedule_update_check()
+
+    def _build_menu(self) -> None:
+        menubar = tk.Menu(self.root)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        menubar.add_cascade(label="File", menu=file_menu)
+        about_menu = tk.Menu(menubar, tearoff=0)
+        about_menu.add_command(label="About IMU Video Sync...", command=self._show_about)
+        about_menu.add_separator()
+        about_menu.add_command(
+            label="Check for updates", command=lambda: self._start_update_check(manual=True)
+        )
+        menubar.add_cascade(label="About", menu=about_menu)
+        self.root.config(menu=menubar)
 
     def _build_ui(self) -> None:
         frame = tk.Frame(self.root, padx=12, pady=12)
@@ -142,6 +161,59 @@ class _GuiApp:
         self._running = running
         self.run_button.configure(state="disabled" if running else "normal")
         self.status_var.set("Running..." if running else "Ready")
+
+    def _show_about(self) -> None:
+        messagebox.showinfo("About IMU Video Sync", f"IMU Video Sync {__version__}")
+
+    def _schedule_update_check(self) -> None:
+        if update_check.is_disabled():
+            return
+        self.root.after(300, lambda: self._start_update_check(manual=False))
+
+    def _start_update_check(self, *, manual: bool) -> None:
+        if update_check.is_disabled():
+            if manual:
+                messagebox.showinfo(
+                    "Update Check Disabled",
+                    "Update checks are disabled via IMU_VIDEO_SYNC_DISABLE_UPDATE_CHECK.",
+                )
+            return
+        if self._update_inflight:
+            if manual:
+                messagebox.showinfo("Update Check", "An update check is already running.")
+            return
+
+        self._update_inflight = True
+
+        def worker() -> None:
+            result = update_check.check_for_updates(include_prereleases=True, timeout_s=2.5)
+            self.root.after(0, lambda: self._handle_update_result(result, manual))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _handle_update_result(
+        self, result: update_check.UpdateResult | None, manual: bool
+    ) -> None:
+        self._update_inflight = False
+        if result is None:
+            if manual:
+                messagebox.showinfo(
+                    "Update Check", "Unable to check for updates right now."
+                )
+            return
+        if result.update_available:
+            message = (
+                f"A new version is available: {result.latest_version}\n"
+                f"You are running {result.current_version}.\n\n"
+                "Open the download page?"
+            )
+            if messagebox.askyesno("Update Available", message):
+                webbrowser.open(result.release_url)
+            return
+        if manual:
+            messagebox.showinfo(
+                "Up to Date", f"You're up to date ({result.current_version})."
+            )
 
     def _append_output(self, text: str) -> None:
         self.output.configure(state="normal")

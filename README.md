@@ -152,3 +152,8 @@ If values are "bad," try:
 2. Merge feature PRs into the RC branch; each merge creates a prerelease tag `vX.Y.Z-rc.N` and publishes a prerelease build.
 3. Merge the RC branch into `master` to create the final `vX.Y.Z` tag and publish the full release.
 4. RC binaries embed the full prerelease tag (for example, `v1.2.3-rc.1`) in `--version` output and the GUI title.
+
+## Update Checks
+- The GUI and CLI check for updates on startup (including RC prereleases).
+- In the GUI, use `About` → `Check for updates` to manually trigger a check.
+- To disable update checks, set `IMU_VIDEO_SYNC_DISABLE_UPDATE_CHECK=1`.
