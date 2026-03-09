@@ -26,18 +26,16 @@ To request support for a new device, please [open an issue](https://github.com/b
    - Linux: `IMUVideoSync-linux-x64`
 3. Run the binary from a terminal, or double-click it on Windows/macOS to launch the GUI.
 
-## Usage (GUI)
-Launch the GUI by double-clicking the main binary or running it from a terminal. The GUI is the primary interface and includes:
-- Video and log file selection
-- Sync results in multiple offset formats (seconds, frames, timecode, and project position)
-- Correlation plot
-- Signal candidates table
-- Log output tab for detailed diagnostics
+## GUI (Windows and macOS)
+The Windows and macOS builds include the full GUI experience. Double-click the binary to launch the GUI. If you run the binary from a terminal, it stays in CLI mode.
 
-Basic flow:
-1. Choose the video file (MP4).
-2. Choose the telemetry/log file (CSV).
-3. Click **Analyze & Sync**.
+![IMUVideoSync GUI screenshot](assets/docs/imu-screenshot.png)
+
+The GUI lets you pick:
+- Video file (MP4)
+- Log file (CSV)
+
+Then click **Analyze & Sync** to run the same processing as the CLI and view the results in the window.
 
 ## Usage (CLI)
 
@@ -63,7 +61,7 @@ Video offset within project     00:00:24.540
 ```
 
 ### JSON Output
-Use `--json` to emit a machine-readable offset summary to stdout. All human-readable output is redirected to stderr, and update checks are skipped.
+Use `--json` to emit a machine-readable offset summary to stdout.
 
 ```
 IMUVideoSync --video session.mp4 --log aim.csv --json
@@ -75,17 +73,6 @@ Example JSON:
 ```
 {"lag_frames":"+1471","lag_seconds":"+24.540","timecode_offset":"+00:00:24;32","video_offset":"00:00:24.540"}
 ```
-
-## GUI (Windows and macOS)
-The Windows and macOS builds include the full GUI experience. Double-click the binary to launch the GUI. If you run the binary from a terminal, it stays in CLI mode.
-
-![IMUVideoSync GUI screenshot](assets/docs/imu-screenshot.png)
-
-The GUI lets you pick:
-- Video file (MP4)
-- Log file (CSV)
-
-Then click **Analyze & Sync** to run the same processing as the CLI and view the results in the window.
 
 ## Outputs
 - **Signal Candidates** table (includes the selected signal).
@@ -99,8 +86,8 @@ Then click **Analyze & Sync** to run the same processing as the CLI and view the
   - `Lag (seconds)`: estimated offset in seconds.
   - `Lag (frames)`: offset in frames (when FPS is known).
   - `Timecode offset`: SMPTE timecode offset (when FPS is known).
-  - `Video offset within project: HH:MM:SS.mmm` when video starts later than data.
-  - `Data offset within project: HH:MM:SS.mmm` when data starts later than video.
+  - `Video offset: HH:MM:SS.mmm` when video starts later than data.
+  - `Data offset: HH:MM:SS.mmm` when data starts later than video.
 
 **Outputs (Files)**
 - `video_imu.csv` if `--write-video-imu-csv`
