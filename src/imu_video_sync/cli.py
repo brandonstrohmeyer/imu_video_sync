@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -698,11 +699,11 @@ def _format_lag_frames(value: float, fps: Optional[float]) -> str:
 
 def _offset_summary_rows(lag_seconds: float, fps: Optional[float]) -> List[Tuple[str, str]]:
     if lag_seconds > 0:
-        offset_label = "Video offset within project"
+        offset_label = "Video offset"
     elif lag_seconds < 0:
-        offset_label = "Data offset within project"
+        offset_label = "Data offset"
     else:
-        offset_label = "Video offset within project"
+        offset_label = "Video offset"
     rows = [
         ("Lag (seconds)", f"{lag_seconds:+.3f}"),
         (offset_label, _format_hhmmss_ms(lag_seconds)),
@@ -711,6 +712,19 @@ def _offset_summary_rows(lag_seconds: float, fps: Optional[float]) -> List[Tuple
         rows.insert(1, ("Lag (frames)", _format_lag_frames(lag_seconds, fps)))
         rows.insert(2, ("Timecode offset", _format_timecode(lag_seconds, fps)))
     return rows
+
+
+def _offset_summary_payload(lag_seconds: float, fps: Optional[float]) -> dict:
+    payload = {"lag_seconds": f"{lag_seconds:+.3f}"}
+    if fps is not None and fps > 0:
+        payload["lag_frames"] = _format_lag_frames(lag_seconds, fps)
+        payload["timecode_offset"] = _format_timecode(lag_seconds, fps)
+    else:
+        payload["lag_frames"] = None
+        payload["timecode_offset"] = None
+    offset_key = "video_offset" if lag_seconds >= 0 else "data_offset"
+    payload[offset_key] = _format_hhmmss_ms(lag_seconds)
+    return payload
 
 
 def _detect_video_fps_from_telemetry_parser(video_path: Path) -> Optional[float]:
@@ -1152,11 +1166,21 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--write-video-imu-csv", action="store_true", help="Write video_imu.csv")
     parser.add_argument("--write-shifted-log", action="store_true", help="Write log_shifted.csv")
     parser.add_argument("--plot", action="store_true", help="Save diagnostic plot to sync_plot.png")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit offset summary as JSON to stdout.",
+    )
     parser.set_defaults(auto_window=True)
     parser.set_defaults(auto_window_size=True)
 
     args = parser.parse_args(argv)
-    _maybe_print_update_notice()
+    stdout = None
+    if args.json:
+        stdout = sys.stdout
+        sys.stdout = sys.stderr
+    else:
+        _maybe_print_update_notice()
     window_is_default = "--window" not in raw_args
     window_step_is_default = "--window-step" not in raw_args
     max_lag_is_default = "--max-lag" not in raw_args
@@ -1371,7 +1395,14 @@ def main(argv: Optional[List[str]] = None) -> None:
             _save_plot(time_rel, best["log_y"], best["video_y"], corr, lags, args.fs)
             print("Wrote sync_plot.png")
 
+        if args.json and stdout is not None:
+            sys.stdout = stdout
+            payload = _offset_summary_payload(lag_seconds, video_fps)
+            print(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+
     except Exception as exc:
+        if args.json and stdout is not None:
+            sys.stdout = stdout
         raise SystemExit(f"Error: {exc}") from exc
 
 

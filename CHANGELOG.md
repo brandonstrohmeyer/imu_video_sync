@@ -3,6 +3,11 @@
 ## v0.4.0
 **Added**
 - IMUVideoSync will now check to see if updates are available when opened
+- `--json` flag for machine readable ouput from CLI
+
+**Changed**
+- GUI is less ugly
+- CLI and GUI have been decoupled for Windows
 
 **Changed**
 - GUI is less ugly

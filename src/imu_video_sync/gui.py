@@ -58,6 +58,7 @@ class _GuiApp:
         self._done_sentinel = object()
         self._running = False
         self._update_inflight = False
+        self._update_url: str | None = None
 
         self._build_menu()
         self._build_ui()
@@ -122,6 +123,21 @@ class _GuiApp:
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(5, weight=1)
 
+        self._build_update_bar(frame)
+
+    def _build_update_bar(self, parent: ttk.Frame) -> None:
+        self._update_bar = ttk.Frame(parent, padding=(0, 6, 0, 8))
+        self._update_label = ttk.Label(self._update_bar, text="", justify="left", anchor="w")
+        self._update_label.grid(row=0, column=0, sticky="w")
+        self._update_button = ttk.Button(
+            self._update_bar, text="Download", command=self._open_update_url, padding=(6, 2)
+        )
+        self._update_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
+        self._update_bar.columnconfigure(0, weight=1)
+        self._update_bar.grid(row=7, column=0, columnspan=2, sticky="we", pady=(8, 0))
+        self._update_bar.grid_remove()
+        self._update_bar.bind("<Configure>", self._refresh_update_wrap)
+
     def _browse_video(self) -> None:
         path = filedialog.askopenfilename(
             title="Select Video (MP4)",
@@ -170,7 +186,38 @@ class _GuiApp:
         self.status_var.set("Running..." if running else "Ready")
 
     def _show_about(self) -> None:
-        messagebox.showinfo("About IMU Video Sync", f"IMU Video Sync {__version__}")
+        message = "\n".join(
+            [
+                "IMUVideoSync by Brandon Strohmeyer",
+                f"Version: {__version__}",
+            ]
+        )
+        messagebox.showinfo("About IMU Video Sync", message)
+
+    def _show_update_bar(self, message: str, url: str) -> None:
+        self._update_url = url
+        self._update_label.configure(text=message)
+        if not self._update_bar.winfo_ismapped():
+            self._update_bar.grid()
+        self._refresh_update_wrap()
+
+    def _hide_update_bar(self) -> None:
+        self._update_url = None
+        if self._update_bar.winfo_ismapped():
+            self._update_bar.grid_remove()
+
+    def _refresh_update_wrap(self, event: tk.Event | None = None) -> None:
+        if not self._update_bar.winfo_ismapped():
+            return
+        self.root.update_idletasks()
+        bar_width = self._update_bar.winfo_width() or self.root.winfo_width()
+        button_width = self._update_button.winfo_reqwidth()
+        wrap = max(200, bar_width - button_width - 32)
+        self._update_label.configure(wraplength=wrap)
+
+    def _open_update_url(self) -> None:
+        if self._update_url:
+            webbrowser.open(self._update_url)
 
     def _schedule_update_check(self) -> None:
         if update_check.is_disabled():
@@ -204,20 +251,25 @@ class _GuiApp:
         self._update_inflight = False
         if result is None:
             if manual:
-                messagebox.showinfo(
-                    "Update Check", "Unable to check for updates right now."
-                )
+                messagebox.showinfo("Update Check", "Unable to check for updates right now.")
             return
         if result.update_available:
-            message = (
-                f"A new version is available: {result.latest_version}\n"
-                f"You are running {result.current_version}.\n\n"
-                "Open the download page?"
+            banner = (
+                f"Update available: {result.latest_version} "
+                f"(current {result.current_version})"
             )
-            if messagebox.askyesno("Update Available", message):
-                webbrowser.open(result.release_url)
+            self._show_update_bar(banner, result.release_url)
+            if manual:
+                message = (
+                    f"A new version is available: {result.latest_version}\n"
+                    f"You are running {result.current_version}.\n\n"
+                    "Open the download page?"
+                )
+                if messagebox.askyesno("Update Available", message):
+                    webbrowser.open(result.release_url)
             return
         if manual:
+            self._hide_update_bar()
             messagebox.showinfo(
                 "Up to Date", f"You're up to date ({result.current_version})."
             )

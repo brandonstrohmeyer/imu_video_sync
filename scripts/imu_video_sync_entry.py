@@ -182,9 +182,11 @@ def _ensure_console_windows() -> None:
 
         kernel32 = ctypes.windll.kernel32
         ATTACH_PARENT_PROCESS = -1
+        kernel32.SetLastError(0)
         attached = kernel32.AttachConsole(ATTACH_PARENT_PROCESS)
         if not attached:
-            if not kernel32.AllocConsole():
+            # ERROR_ACCESS_DENIED (5) means we're already attached to a console.
+            if ctypes.get_last_error() != 5:
                 return
         sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace", buffering=1)
         sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace", buffering=1)
