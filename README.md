@@ -2,16 +2,6 @@
 
 IMUVideoSync is a tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. It estimates the time offset by comparing motion patterns and outputs multiple offset formats for use in tools like RaceRender. A full CLI is still included for automation.
 
-
-## Supported Devices
-
-<pre>
-Cameras             Loggers
-GoPro HERO5+        AiM
-DJI Osmo Action 4+  RaceBox
-DJI Nano            RaceChrono
-</pre>
-
 To request support for a new device, please [open an issue](https://github.com/brandonstrohmeyer/imu_video_sync/issues/new?template=new-device-support.yml).
 
 ## Installation
@@ -94,6 +84,18 @@ Example JSON:
   - Log CSV with timestamps shifted by the computed lag.
 - `sync_plot.png` if `--plot`
   - Visual diagnostics: signals, correlation curve, and difference signal.
+  
+## Supported Devices
+
+**Cameras**
+- GoPro HERO5+
+- DJI Osmo Action 4+
+- DJI Nano
+
+**Loggers**
+- AiM
+- RaceBox
+- RaceChrono
 
 ## How It Works
 1. Extract video IMU (gyro/accel) from MP4 using `telemetry-parser` and normalize timestamps to start at 0.0 seconds.
