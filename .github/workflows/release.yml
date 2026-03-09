@@ -141,25 +141,22 @@ jobs:
 
       - name: Build binary (Windows)
         if: matrix.platform == 'windows'
+        shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync \
-            --icon assets/icon/IMUVideoSync.ico \
-            --paths src \
-            --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon" \
-            --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon" \
-            --collect-binaries telemetry_parser \
-            --collect-data telemetry_parser \
-            --collect-submodules telemetry_parser \
-            scripts/imu_video_sync_gui_entry.py
-          python -m PyInstaller --noconfirm --onefile --exclude-module scipy --exclude-module tkinter --exclude-module ttkbootstrap --name IMUVideoSync-cli \
-            --icon assets/icon/IMUVideoSync.ico \
-            --paths src \
-            --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon" \
-            --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon" \
-            --collect-binaries telemetry_parser \
-            --collect-data telemetry_parser \
-            --collect-submodules telemetry_parser \
-            scripts/imu_video_sync_cli_entry.py
+          $base = @(
+            "--noconfirm"
+            "--onefile"
+            "--exclude-module", "scipy"
+            "--icon", "assets/icon/IMUVideoSync.ico"
+            "--paths", "src"
+            "--add-data", "assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon"
+            "--add-data", "assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon"
+            "--collect-binaries", "telemetry_parser"
+            "--collect-data", "telemetry_parser"
+            "--collect-submodules", "telemetry_parser"
+          )
+          python -m PyInstaller @base "--noconsole" "--name" "IMUVideoSync" "scripts/imu_video_sync_gui_entry.py"
+          python -m PyInstaller @base "--name" "IMUVideoSync-cli" "--exclude-module" "tkinter" "--exclude-module" "ttkbootstrap" "scripts/imu_video_sync_cli_entry.py"
 
       - name: Build binary (macOS)
         if: matrix.platform == 'macos'

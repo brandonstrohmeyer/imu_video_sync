@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from . import __version__
+from . import analysis
 from . import update_check
 from .core.models import ImuBundle, LogData
 from .core.signals import SIGNAL_PRIORITY, available_signals, choose_signal, derive_signal
@@ -698,33 +699,11 @@ def _format_lag_frames(value: float, fps: Optional[float]) -> str:
 
 
 def _offset_summary_rows(lag_seconds: float, fps: Optional[float]) -> List[Tuple[str, str]]:
-    if lag_seconds > 0:
-        offset_label = "Video offset"
-    elif lag_seconds < 0:
-        offset_label = "Data offset"
-    else:
-        offset_label = "Video offset"
-    rows = [
-        ("Lag (seconds)", f"{lag_seconds:+.3f}"),
-        (offset_label, _format_hhmmss_ms(lag_seconds)),
-    ]
-    if fps is not None and fps > 0:
-        rows.insert(1, ("Lag (frames)", _format_lag_frames(lag_seconds, fps)))
-        rows.insert(2, ("Timecode offset", _format_timecode(lag_seconds, fps)))
-    return rows
+    return analysis._offset_summary_rows(lag_seconds, fps)
 
 
 def _offset_summary_payload(lag_seconds: float, fps: Optional[float]) -> dict:
-    payload = {"lag_seconds": f"{lag_seconds:+.3f}"}
-    if fps is not None and fps > 0:
-        payload["lag_frames"] = _format_lag_frames(lag_seconds, fps)
-        payload["timecode_offset"] = _format_timecode(lag_seconds, fps)
-    else:
-        payload["lag_frames"] = None
-        payload["timecode_offset"] = None
-    offset_key = "video_offset" if lag_seconds >= 0 else "data_offset"
-    payload[offset_key] = _format_hhmmss_ms(lag_seconds)
-    return payload
+    return analysis._offset_summary_payload(lag_seconds, fps)
 
 
 def _detect_video_fps_from_telemetry_parser(video_path: Path) -> Optional[float]:
@@ -858,21 +837,26 @@ def _format_columns(headers: List[str], rows: List[List[str]]) -> str:
     return "\n".join(lines)
 
 
-def _format_candidates_table(metrics_all: List[dict], selected_idx: Optional[int] = None) -> str:
+def _format_candidates_table(metrics_all: List[object], selected_idx: Optional[int] = None) -> str:
     # Simple aligned columns (no external formatting dependency).
     headers = ["signal", "lag_s", "peak", "psr", "stability_s", "score", "windows", ""]
     rows = []
+    def _val(item: object, key: str):
+        if isinstance(item, dict):
+            return item[key]
+        return getattr(item, key)
+
     for idx, m in enumerate(metrics_all):
         selected_label = "[selected]" if selected_idx is not None and idx == selected_idx else ""
         rows.append(
             [
-                str(m["signal"]),
-                f"{m['lag_seconds']:+.3f}",
-                f"{m['peak']:.3f}",
-                f"{m['psr']:.3f}",
-                f"{m['stability']:.3f}",
-                f"{m['score']:.3f}",
-                str(m.get("window_count", 1)),
+                str(_val(m, "signal")),
+                f"{_val(m, 'lag_seconds'):+.3f}",
+                f"{_val(m, 'peak'):.3f}",
+                f"{_val(m, 'psr'):.3f}",
+                f"{_val(m, 'stability'):.3f}",
+                f"{_val(m, 'score'):.3f}",
+                str(_val(m, "window_count") if not isinstance(m, dict) else m.get("window_count", 1)),
                 selected_label,
             ]
         )
@@ -1189,10 +1173,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     highpass_is_default = "--highpass-hz" not in raw_args
 
     try:
-        _status("Resolving input files...")
-        video_path, log_path = _resolve_paths(args.video, args.log)
-        video_fps = args.video_fps if args.video_fps is not None else _detect_video_fps(video_path)
-
         video_opts = _parse_kv_args(args.video_opt)
         log_opts = _parse_kv_args(args.log_opt)
         if args.log_time_col:
@@ -1202,202 +1182,84 @@ def main(argv: Optional[List[str]] = None) -> None:
         if args.log_acc_cols:
             log_opts["acc_cols"] = _parse_cols(args.log_acc_cols)
 
-        video_source = resolve_source("video", video_path, forced=args.video_source)
-        log_source = resolve_source("log", log_path, forced=args.log_source)
-
-        if args.dump_video_telemetry_keys:
-            _dump_video_telemetry_keys(video_path, video_source.name)
-
-        _status(f"Loading log: {log_path.name} ({log_source.name})")
-        log = log_source.load(log_path, **log_opts)
-
-        _status(f"Loading video IMU: {video_path.name} ({video_source.name}) (this can take a while)")
-        video = video_source.load(video_path, **video_opts)
-
-        available = sorted(
-            available_signals(log.imu) & available_signals(video),
-            key=lambda s: SIGNAL_PRIORITY.index(s) if s in SIGNAL_PRIORITY else 99,
-        )
-        if not available:
-            raise ValueError("No compatible signals found between log and video data.")
-
-        selected_signals: List[str]
+        signals = None
         if args.signals:
-            requested = [s.strip() for s in args.signals.split(",") if s.strip()]
-            selected_signals = []
-            for sig in requested:
-                if sig in available:
-                    selected_signals.append(sig)
-                else:
-                    print(f"Warning: Requested signal {sig} not available; skipping.")
-            if not selected_signals:
-                selected_signals = available
-        elif args.signal.lower() in ("auto", "all"):
-            selected_signals = available
-        else:
-            signal, warning = choose_signal(args.signal, log.imu, video)
-            if warning:
-                print(f"Warning: {warning}")
-            selected_signals = [signal]
+            signals = [s.strip() for s in args.signals.split(",") if s.strip()]
 
-        if fs_is_default:
-            log_rate = infer_sample_rate(np.asarray(log.time_s, dtype=float))
-            video_rate = _bundle_rate(video)
-            rates = [r for r in (log_rate, video_rate) if np.isfinite(r) and r > 0]
-            if len(rates) == 2:
-                auto_fs = min(50.0, max(20.0, float(np.sqrt(rates[0] * rates[1]))))
-            elif rates:
-                auto_fs = min(50.0, max(20.0, rates[0]))
-            else:
-                auto_fs = args.fs
-            if abs(auto_fs - args.fs) > 1e-6:
-                print(f"Info: Auto sample rate set to {auto_fs:.1f} Hz.")
-                args.fs = auto_fs
-
-        duration_s = min(
-            _safe_duration(np.asarray(log.time_s, dtype=float)),
-            _bundle_duration(video),
+        options = analysis.SyncOptions(
+            video_fps=args.video_fps,
+            video_source=args.video_source,
+            log_source=args.log_source,
+            video_opt=video_opts,
+            log_opt=log_opts,
+            signal=args.signal,
+            signals=signals,
+            max_lag=args.max_lag,
+            window=args.window,
+            auto_window=args.auto_window,
+            auto_window_size=args.auto_window_size,
+            window_step=args.window_step,
+            start=args.start,
+            fs=args.fs,
+            lowpass_hz=args.lowpass_hz,
+            highpass_hz=args.highpass_hz,
+            show_drift=args.show_drift,
+            dump_video_telemetry_keys=args.dump_video_telemetry_keys,
+            write_video_imu_csv=args.write_video_imu_csv,
+            write_shifted_log=args.write_shifted_log,
+            plot=args.plot,
+            window_is_default=window_is_default,
+            window_step_is_default=window_step_is_default,
+            max_lag_is_default=max_lag_is_default,
+            fs_is_default=fs_is_default,
+            lowpass_is_default=lowpass_is_default,
+            highpass_is_default=highpass_is_default,
         )
-        if max_lag_is_default and duration_s > 0:
-            auto_max_lag = min(600.0, max(30.0, 0.5 * duration_s))
-            if auto_max_lag < args.max_lag - 1e-6:
-                print(f"Info: Auto max lag set to {auto_max_lag:.1f}s.")
-                args.max_lag = auto_max_lag
 
-        if (
-            args.auto_window_size
-            and window_is_default
-            and args.auto_window
-            and args.start is None
-        ):
-            selected_window, candidates = _select_window_size(
-                log=log,
-                video=video,
-                signals=selected_signals,
-                fs=args.fs,
-                lowpass_hz=args.lowpass_hz,
-                highpass_hz=args.highpass_hz,
-                max_lag_s=args.max_lag,
-                window_step_s=args.window_step,
-                auto_window=args.auto_window,
-                window_step_is_default=window_step_is_default,
-            )
-            if selected_window > 0:
-                args.window = selected_window
-                if candidates:
-                    cand_str = ", ".join(f"{c:.0f}" for c in candidates)
-                    print(
-                        f"Auto window size selected: {selected_window:.1f}s (candidates: {cand_str})"
-                    )
-                else:
-                    print(f"Auto window size selected: {selected_window:.1f}s")
-
-        if lowpass_is_default:
-            auto_lowpass = min(8.0, 0.45 * args.fs)
-            if abs(auto_lowpass - args.lowpass_hz) > 1e-6:
-                print(f"Info: Auto lowpass set to {auto_lowpass:.2f} Hz.")
-                args.lowpass_hz = auto_lowpass
-
-        if highpass_is_default:
-            target_cycles = 3.0
-            auto_highpass = target_cycles / max(10.0, args.window)
-            auto_highpass = max(0.1, min(0.4, auto_highpass))
-            if abs(auto_highpass - args.highpass_hz) > 1e-6:
-                print(f"Info: Auto highpass set to {auto_highpass:.2f} Hz.")
-                args.highpass_hz = auto_highpass
-
-        best = None
-        best_idx: Optional[int] = None
-        metrics_all = []
-        for sig in selected_signals:
-            _status(f"Computing correlation metrics for signal: {sig}")
-            metrics = _compute_metrics(
-                log=log,
-                video=video,
-                signal=sig,
-                fs=args.fs,
-                window_s=args.window,
-                lowpass_hz=args.lowpass_hz,
-                highpass_hz=args.highpass_hz,
-                max_lag_s=args.max_lag,
-                start_override=args.start,
-                auto_window=args.auto_window,
-                window_step_s=args.window_step,
-                window_is_default=window_is_default,
-                window_step_is_default=window_step_is_default,
-                emit_warnings=(sig == selected_signals[0]),
-            )
-            metrics_all.append(metrics)
-            if best is None or metrics["score"] > best["score"]:
-                best = metrics
-                best_idx = len(metrics_all) - 1
-
-        if best is None:
-            raise ValueError("Failed to compute lag for selected signals.")
-
-        log_rate = best["log_rate"]
-        video_rate = best["video_rate"]
+        result = analysis.run_sync(args.video, args.log, options=options, emit=_status)
+        video_fps = result.video_fps
 
         print("")
         print("Signal Candidates")
         print(_color_line())
-        print(_format_candidates_table(metrics_all, selected_idx=best_idx))
+        print(_format_candidates_table(result.candidates, selected_idx=result.selected_index))
         print("")
-
-        lag_seconds = best["lag_seconds"]
-        peak = best["peak"]
-        psr = best["psr"]
-        stability_std = best["stability"]
-        drift_info = best.get("drift")
-        corr = best["corr"]
-        lags = best["lags"]
 
         print("")
         print("Sync Summary")
         print(_color_line())
-        conf_score = _confidence_score(peak, psr, stability_std)
-        conf_label = _confidence_rating(conf_score)
         summary_rows = [
-            ("Correlation peak", f"{peak:.3f}"),
-            ("Peak-to-sidelobe ratio", f"{psr:.3f}"),
-            ("Stability (stddev s)", f"{stability_std:.3f}"),
-            ("Confidence", f"{conf_label} ({conf_score:.0f}/100)"),
+            ("Correlation peak", f"{result.diagnostics.correlation_peak:.3f}"),
+            ("Peak-to-sidelobe ratio", f"{result.diagnostics.psr:.3f}"),
+            ("Stability (stddev s)", f"{result.diagnostics.stability:.3f}"),
+            (
+                "Confidence",
+                f"{result.diagnostics.confidence_label} ({result.diagnostics.confidence_score:.0f}/100)",
+            ),
         ]
         if args.show_drift:
-            if drift_info and drift_info.get("reliable"):
-                summary_rows.append(("Drift (s/s)", f"{drift_info['slope']:+.6f}"))
+            if result.drift_info and result.drift_info.get("reliable"):
+                summary_rows.append(("Drift (s/s)", f"{result.drift_info['slope']:+.6f}"))
             else:
                 summary_rows.append(("Drift (s/s)", "n/a (insufficient reliability)"))
         print(_format_kv(summary_rows))
         print("")
         print("Offset Summary")
         print(_color_line())
-        print(_format_kv(_offset_summary_rows(lag_seconds, video_fps)))
-        if video_fps is None or video_fps <= 0:
-            print("Warning: FPS unavailable; skipping frame/timecode offsets.")
+        offset_rows = [("Lag (seconds)", result.offsets.lag_seconds_str)]
+        if result.offsets.lag_frames is not None:
+            offset_rows.append(("Lag (frames)", result.offsets.lag_frames))
+            if result.offsets.timecode_offset is not None:
+                offset_rows.append(("Timecode offset", result.offsets.timecode_offset))
+        offset_rows.append((result.offsets.project_label, result.offsets.project_position))
+        print(_format_kv(offset_rows))
+        for warning in result.post_summary_warnings:
+            print(warning)
         print("")
-
-        if peak < 0.2:
-            print("Warning: Low correlation peak; alignment may be unreliable.")
-        if np.isfinite(stability_std) and stability_std > 0.2:
-            print("Warning: High lag variability across subwindows; alignment may be unstable.")
-
-        if args.write_video_imu_csv:
-            write_imu_csv(Path("video_imu.csv"), video)
-            print("Wrote video_imu.csv")
-
-        if args.write_shifted_log:
-            write_shifted_log(Path("log_shifted.csv"), log.df, log.time_col, log.time_s, lag_seconds)
-            print("Wrote log_shifted.csv")
-
-        if args.plot:
-            time_rel = best["log_t"] - float(best["log_t"][0])
-            _save_plot(time_rel, best["log_y"], best["video_y"], corr, lags, args.fs)
-            print("Wrote sync_plot.png")
 
         if args.json and stdout is not None:
             sys.stdout = stdout
-            payload = _offset_summary_payload(lag_seconds, video_fps)
+            payload = _offset_summary_payload(result.offsets.lag_seconds, video_fps)
             print(json.dumps(payload, separators=(",", ":"), sort_keys=True))
 
     except Exception as exc:
