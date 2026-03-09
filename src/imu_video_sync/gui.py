@@ -24,6 +24,13 @@ try:
     except Exception:
         ttk = ttk_std
         _USING_TTKBOOTSTRAP = False
+    try:
+        from tkinterdnd2 import DND_FILES, TkinterDnD
+        _HAS_DND = True
+    except Exception:
+        DND_FILES = None
+        TkinterDnD = None
+        _HAS_DND = False
 except Exception as exc:  # pragma: no cover - only triggered when Tk is missing
     raise RuntimeError(
         "Tkinter is not available. Install a Python build that includes Tk (Tcl/Tk runtime)."
@@ -221,18 +228,22 @@ class _GuiApp:
         frame.grid(row=row, column=0, sticky="we", pady=(0, 10))
 
         ttk.Label(frame, text="Video File").grid(row=0, column=0, sticky="w")
-        video_entry = ttk.Entry(frame, textvariable=self.video_var, state="readonly")
+        video_entry = ttk.Entry(frame, textvariable=self.video_var)
         video_entry.grid(row=1, column=0, sticky="we", padx=(0, 8))
         ttk.Button(frame, text="Browse...", command=self._browse_video).grid(
             row=1, column=1, sticky="we"
         )
 
         ttk.Label(frame, text="Telemetry Log").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        log_entry = ttk.Entry(frame, textvariable=self.log_var, state="readonly")
+        log_entry = ttk.Entry(frame, textvariable=self.log_var)
         log_entry.grid(row=3, column=0, sticky="we", padx=(0, 8))
         ttk.Button(frame, text="Browse...", command=self._browse_log).grid(
             row=3, column=1, sticky="we"
         )
+
+        if _HAS_DND:
+            self._register_drop_target(video_entry, self.video_var, (".mp4", ".mov", ".mkv"))
+            self._register_drop_target(log_entry, self.log_var, (".csv", ".log", ".txt"))
 
         self.run_button = ttk.Button(frame, text="Analyze & Sync", command=self._start_run)
         self.run_button.grid(row=4, column=0, sticky="w", pady=(10, 0))
@@ -723,8 +734,8 @@ class _GuiApp:
         self.output.configure(state="disabled")
 
     def _validate_paths(self) -> tuple[Path, Path] | None:
-        video_str = self.video_var.get().strip()
-        log_str = self.log_var.get().strip()
+        video_str = self.video_var.get().strip().strip("\"'")
+        log_str = self.log_var.get().strip().strip("\"'")
 
         if not video_str or not log_str:
             self._set_error(
@@ -741,6 +752,52 @@ class _GuiApp:
             self._set_error("Selected log file was not found.", [str(log)])
             return None
         return video, log
+
+    def _register_drop_target(
+        self,
+        widget: ttk.Widget,
+        target_var: tk.StringVar,
+        allowed_exts: tuple[str, ...] | None = None,
+    ) -> None:
+        try:
+            widget.drop_target_register(DND_FILES)  # type: ignore[union-attr]
+            widget.dnd_bind(
+                "<<Drop>>",
+                lambda event, var=target_var, exts=allowed_exts: self._handle_drop(
+                    event, var, exts
+                ),
+            )
+        except Exception:
+            return
+
+    def _handle_drop(
+        self,
+        event: tk.Event,
+        target_var: tk.StringVar,
+        allowed_exts: tuple[str, ...] | None,
+    ) -> None:
+        data = getattr(event, "data", "")
+        if not data:
+            return
+        try:
+            paths = self.root.tk.splitlist(data)
+        except Exception:
+            paths = [data]
+        cleaned: list[str] = []
+        for item in paths:
+            item = item.strip().strip("\"'")
+            if item.startswith("{") and item.endswith("}"):
+                item = item[1:-1]
+            if item:
+                cleaned.append(item)
+        if not cleaned:
+            return
+        if allowed_exts:
+            for item in cleaned:
+                if Path(item).suffix.lower() in allowed_exts:
+                    target_var.set(item)
+                    return
+        target_var.set(cleaned[0])
 
     def _start_run(self) -> None:
         if self._running:
@@ -1054,7 +1111,14 @@ class _GuiApp:
 
 
 def main() -> None:
-    if _USING_TTKBOOTSTRAP:
+    if _HAS_DND:
+        root = TkinterDnD.Tk()  # type: ignore[assignment,call-arg]
+        if _USING_TTKBOOTSTRAP:
+            try:
+                ttk.Style().theme_use(choose_ttkbootstrap_theme())
+            except Exception:
+                pass
+    elif _USING_TTKBOOTSTRAP:
         root = ttk.Window(themename=choose_ttkbootstrap_theme())
     else:
         root = tk.Tk()
