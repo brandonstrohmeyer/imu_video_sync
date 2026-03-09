@@ -11,12 +11,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
-$version = "dev"
-try {
-    $version = (git describe --tags --abbrev=0).Trim()
-} catch {
-    $version = "dev"
-}
+$version = "v0.0.0"
 $versionFile = Join-Path $repoRoot "src\\imu_video_sync\\_version.py"
 $versionContent = "__version__ = `"$version`"`n"
 Set-Content -Path $versionFile -Value $versionContent -Encoding UTF8
