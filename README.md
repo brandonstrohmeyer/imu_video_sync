@@ -5,28 +5,24 @@ IMUVideoSync is a tool that time-syncs a telemetry log (CSV) to a camera video (
 
 ## Supported Devices
 
-<table style="border:0;border-collapse:collapse;">
-  <thead>
-    <tr>
-      <th style="border:0;">Cameras</th>
-      <th style="border:0;">Loggers</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td style="border:0;">GoPro HERO5+</td>
-      <td style="border:0;">AiM</td>
-    </tr>
-    <tr>
-      <td style="border:0;">DJI Osmo Action 4+</td>
-      <td style="border:0;">RaceBox</td>
-    </tr>
-    <tr>
-      <td style="border:0;">DJI Nano</td>
-      <td style="border:0;">RaceChrono</td>
-    </tr>
-  </tbody>
-</table>
+<div style="display:flex; gap:32px; flex-wrap:wrap;">
+  <div>
+    <strong>Cameras</strong>
+    <ul>
+      <li>GoPro HERO5+</li>
+      <li>DJI Osmo Action 4+</li>
+      <li>DJI Nano</li>
+    </ul>
+  </div>
+  <div>
+    <strong>Loggers</strong>
+    <ul>
+      <li>AiM</li>
+      <li>RaceBox</li>
+      <li>RaceChrono</li>
+    </ul>
+  </div>
+</div>
 
 To request support for a new device, please [open an issue](https://github.com/brandonstrohmeyer/imu_video_sync/issues/new?template=new-device-support.yml).
 
