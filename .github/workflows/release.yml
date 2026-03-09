@@ -141,16 +141,25 @@ jobs:
 
       - name: Build binary (Windows)
         if: matrix.platform == 'windows'
-        run: >
-          python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync
-          --icon assets/icon/IMUVideoSync.ico
-          --paths src
-          --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon"
-          --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon"
-          --collect-binaries telemetry_parser
-          --collect-data telemetry_parser
-          --collect-submodules telemetry_parser
-          scripts/imu_video_sync_entry.py
+        run: |
+          python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync \
+            --icon assets/icon/IMUVideoSync.ico \
+            --paths src \
+            --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon" \
+            --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon" \
+            --collect-binaries telemetry_parser \
+            --collect-data telemetry_parser \
+            --collect-submodules telemetry_parser \
+            scripts/imu_video_sync_gui_entry.py
+          python -m PyInstaller --noconfirm --onefile --exclude-module scipy --exclude-module tkinter --exclude-module ttkbootstrap --name IMUVideoSync-cli \
+            --icon assets/icon/IMUVideoSync.ico \
+            --paths src \
+            --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon" \
+            --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon" \
+            --collect-binaries telemetry_parser \
+            --collect-data telemetry_parser \
+            --collect-submodules telemetry_parser \
+            scripts/imu_video_sync_cli_entry.py
 
       - name: Build binary (macOS)
         if: matrix.platform == 'macos'
@@ -184,6 +193,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
           Move-Item -Force dist\IMUVideoSync.exe release\IMUVideoSync-windows-x64.exe
+          Move-Item -Force dist\IMUVideoSync-cli.exe release\IMUVideoSync-cli-windows-x64.exe
 
       - name: Prepare artifact (macOS)
         if: matrix.platform == 'macos'

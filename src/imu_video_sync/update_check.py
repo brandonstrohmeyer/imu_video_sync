@@ -18,6 +18,10 @@ _TAG_RE = re.compile(
     r"^v?(?P<maj>0|[1-9]\d*)\.(?P<min>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
     r"(?:-rc\.(?P<rc>\d+))?$"
 )
+_DEV_TAG_RE = re.compile(
+    r"^v?(?P<maj>0|[1-9]\d*)\.(?P<min>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
+    r"-(?P<ts>\d{12})$"
+)
 
 
 @dataclass(frozen=True)
@@ -128,7 +132,13 @@ def _parse_tag(tag: str) -> Optional[Tuple[int, int, int, int, int]]:
     clean = _sanitize_tag(tag)
     match = _TAG_RE.match(clean)
     if not match:
-        return None
+        dev_match = _DEV_TAG_RE.match(clean)
+        if not dev_match:
+            return None
+        major = int(dev_match.group("maj"))
+        minor = int(dev_match.group("min"))
+        patch = int(dev_match.group("patch"))
+        return (major, minor, patch, 0, -1)
     major = int(match.group("maj"))
     minor = int(match.group("min"))
     patch = int(match.group("patch"))

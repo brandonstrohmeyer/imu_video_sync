@@ -20,7 +20,8 @@ To request support for a new device, please [open an issue](https://github.com/b
 ## Installation
 1. Go to the GitHub [Releases](https://github.com/brandonstrohmeyer/imu_video_sync/releases) page.
 2. Download the binary for your OS:
-   - Windows: `IMUVideoSync-windows-x64.exe`
+   - Windows (GUI): `IMUVideoSync-windows-x64.exe`
+   - Windows (CLI): `IMUVideoSync-cli-windows-x64.exe`
    - macOS: `IMUVideoSync-macos-universal2` (or `IMUVideoSync-macos-x64`)
    - Linux: `IMUVideoSync-linux-x64`
 3. Run the binary from a terminal, or double-click it on Windows/macOS to launch the GUI.
@@ -46,6 +47,20 @@ Lag (seconds)                   +24.540
 Lag (frames)                    +1471
 Timecode offset                 +00:00:24;32
 Video offset within project     00:00:24.540
+```
+
+### JSON Output
+Use `--json` to emit a machine-readable offset summary to stdout. All human-readable output is redirected to stderr, and update checks are skipped.
+
+```
+IMUVideoSync --video session.mp4 --log aim.csv --json
+```
+
+On Windows, use the CLI binary (`IMUVideoSync-cli-windows-x64.exe`) for terminal or automation workflows.
+
+Example JSON:
+```
+{"lag_frames":"+1471","lag_seconds":"+24.540","timecode_offset":"+00:00:24;32","video_offset":"00:00:24.540"}
 ```
 
 ## GUI (Windows and macOS)
