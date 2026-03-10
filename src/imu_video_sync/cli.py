@@ -92,6 +92,10 @@ def _format_rate(rate: float) -> str:
     return f"{rate:.2f} Hz"
 
 
+def _format_signal_list(signals: List[str]) -> str:
+    return ", ".join(signals) if signals else "none"
+
+
 def _safe_duration(time_s: np.ndarray) -> float:
     if time_s.size < 2:
         return 0.0
@@ -1236,6 +1240,8 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "Confidence",
                 f"{result.diagnostics.confidence_label} ({result.diagnostics.confidence_score:.0f}/100)",
             ),
+            ("Available signals", _format_signal_list(result.available_signals)),
+            ("Evaluated signals", _format_signal_list(result.selected_signals)),
         ]
         if args.show_drift:
             if result.drift_info and result.drift_info.get("reliable"):

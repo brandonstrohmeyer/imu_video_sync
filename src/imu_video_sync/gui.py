@@ -70,12 +70,23 @@ class _GuiApp:
         self.confidence_var = tk.StringVar(value="--")
         self.correlation_var = tk.StringVar(value="--")
         self.psr_var = tk.StringVar(value="--")
+        self.stability_var = tk.StringVar(value="--")
         self.signal_var = tk.StringVar(value="--")
 
         self.seconds_var = tk.StringVar(value="--")
         self.frames_var = tk.StringVar(value="--")
         self.timecode_var = tk.StringVar(value="--")
         self.project_var = tk.StringVar(value="--")
+
+        self.window_var = tk.StringVar(value="")
+        self.max_lag_var = tk.StringVar(value="")
+        self.window_step_var = tk.StringVar(value="")
+        self.start_var = tk.StringVar(value="")
+        self.auto_window_var = tk.BooleanVar(value=True)
+        self.auto_window_size_var = tk.BooleanVar(value=True)
+        self.fs_var = tk.StringVar(value="")
+        self.lowpass_var = tk.StringVar(value="")
+        self.highpass_var = tk.StringVar(value="")
 
         self._queue: queue.Queue = queue.Queue()
         self._done_sentinel = object()
@@ -101,6 +112,14 @@ class _GuiApp:
         self._card_max_width = 260
         self._cards_wrap: ttk.Frame | None = None
         self._cards_frame: ttk.Frame | None = None
+        self._io_notebook: ttk.Notebook | None = None
+        self._io_inputs_tab: ttk.Frame | None = None
+        self._io_options_tab: ttk.Frame | None = None
+        self._placeholder_active: dict[int, bool] = {}
+        self._placeholder_text: dict[int, str] = {}
+        self._placeholder_fg: dict[int, str] = {}
+        self._placeholder_activate: dict[int, callable] = {}
+        self.status_bar: ttk.Progressbar | None = None
 
         self._init_fonts()
         self._build_menu()
@@ -224,34 +243,265 @@ class _GuiApp:
         self.root.after(0, self._on_cards_wrap_resize)
 
     def _build_file_panel(self, parent: ttk.Frame, row: int) -> None:
-        frame = ttk.Labelframe(parent, text="File Inputs", padding=12)
+        frame = ttk.Frame(parent)
         frame.grid(row=row, column=0, sticky="we", pady=(0, 10))
+        frame.bind("<Configure>", self._sync_io_notebook_height)
 
-        ttk.Label(frame, text="Video File").grid(row=0, column=0, sticky="w")
-        video_entry = ttk.Entry(frame, textvariable=self.video_var)
+        notebook = ttk.Notebook(frame)
+        notebook.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+
+        inputs = ttk.Frame(notebook, padding=(8, 8, 8, 6))
+        options = ttk.Frame(notebook, padding=(8, 8, 8, 6))
+        notebook.add(inputs, text="Inputs")
+        notebook.add(options, text="Options")
+        notebook.select(inputs)
+        notebook.bind("<<NotebookTabChanged>>", self._sync_io_notebook_height)
+        self._io_notebook = notebook
+        self._io_inputs_tab = inputs
+        self._io_options_tab = options
+
+        ttk.Label(inputs, text="Video File").grid(row=0, column=0, sticky="w")
+        video_entry = ttk.Entry(inputs, textvariable=self.video_var)
         video_entry.grid(row=1, column=0, sticky="we", padx=(0, 8))
-        ttk.Button(frame, text="Browse...", command=self._browse_video).grid(
+        ttk.Button(inputs, text="Browse...", command=self._browse_video).grid(
             row=1, column=1, sticky="we"
         )
-
-        ttk.Label(frame, text="Telemetry Log").grid(row=2, column=0, sticky="w", pady=(8, 0))
-        log_entry = ttk.Entry(frame, textvariable=self.log_var)
-        log_entry.grid(row=3, column=0, sticky="we", padx=(0, 8))
-        ttk.Button(frame, text="Browse...", command=self._browse_log).grid(
-            row=3, column=1, sticky="we"
+        ttk.Label(inputs, text="Telemetry Log").grid(row=3, column=0, sticky="w")
+        log_entry = ttk.Entry(inputs, textvariable=self.log_var)
+        log_entry.grid(row=4, column=0, sticky="we", padx=(0, 8))
+        ttk.Button(inputs, text="Browse...", command=self._browse_log).grid(
+            row=4, column=1, sticky="we"
         )
 
         if _HAS_DND:
             self._register_drop_target(video_entry, self.video_var, (".mp4", ".mov", ".mkv"))
             self._register_drop_target(log_entry, self.log_var, (".csv", ".log", ".txt"))
 
-        self.run_button = ttk.Button(frame, text="Analyze & Sync", command=self._start_run)
-        self.run_button.grid(row=4, column=0, sticky="w", pady=(10, 0))
+        action_row = ttk.Frame(inputs)
+        action_row.grid(row=6, column=0, columnspan=2, sticky="we", pady=(8, 0))
+        action_row.columnconfigure(0, weight=1)
+        action_row.columnconfigure(1, weight=1)
 
-        self.status_label = ttk.Label(frame, textvariable=self.status_var)
-        self.status_label.grid(row=4, column=1, sticky="e", pady=(10, 0))
+        self.run_button = ttk.Button(action_row, text="Analyze & Sync", command=self._start_run)
+        self.run_button.grid(row=0, column=0, sticky="w")
 
-        frame.columnconfigure(0, weight=1)
+        status_frame = ttk.Frame(action_row, width=320, height=24)
+        status_frame.grid(row=0, column=1, sticky="e")
+        status_frame.grid_propagate(False)
+        status_frame.columnconfigure(0, minsize=90)
+        status_frame.columnconfigure(1, minsize=150)
+        self.status_bar = ttk.Progressbar(status_frame, mode="indeterminate", length=80)
+        self.status_bar.grid(row=0, column=0, sticky="e")
+        self.status_label = ttk.Label(status_frame, textvariable=self.status_var, anchor="e")
+        self.status_label.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self.status_label.configure(width=18)
+        self.status_bar.grid_remove()
+
+        inputs.columnconfigure(0, weight=1)
+        inputs.columnconfigure(1, weight=0)
+
+        options.columnconfigure(0, weight=1)
+        options.columnconfigure(1, weight=1)
+
+        left_col = ttk.Frame(options)
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        right_col = ttk.Frame(options)
+        right_col.grid(row=0, column=1, sticky="nsew")
+        left_col.columnconfigure(2, weight=1)
+        right_col.columnconfigure(2, weight=1)
+
+        header_font = self._font_bold if self._font_bold is not None else None
+
+        ttk.Label(left_col, text="Correlation", font=header_font).grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 6)
+        )
+
+        ttk.Label(left_col, text="Window (s)").grid(row=1, column=0, sticky="w")
+        window_entry = ttk.Entry(left_col, textvariable=self.window_var, width=10)
+        window_entry.grid(row=1, column=1, sticky="w", padx=(6, 8))
+        ttk.Label(
+            left_col,
+            text="Analysis window length.",
+            font=self._font_small,
+        ).grid(row=1, column=2, sticky="w")
+        self._install_placeholder(window_entry, self.window_var, "360")
+
+        ttk.Label(left_col, text="Max lag (s)").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        max_lag_entry = ttk.Entry(left_col, textvariable=self.max_lag_var, width=10)
+        max_lag_entry.grid(row=2, column=1, sticky="w", padx=(6, 8), pady=(6, 0))
+        ttk.Label(
+            left_col,
+            text="Search limit for offsets.",
+            font=self._font_small,
+        ).grid(row=2, column=2, sticky="w", pady=(6, 0))
+        self._install_placeholder(max_lag_entry, self.max_lag_var, "600")
+
+        ttk.Label(left_col, text="Window step (s)").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        step_entry = ttk.Entry(left_col, textvariable=self.window_step_var, width=10)
+        step_entry.grid(row=3, column=1, sticky="w", padx=(6, 8), pady=(6, 0))
+        ttk.Label(
+            left_col,
+            text="Smaller steps = more scans.",
+            font=self._font_small,
+        ).grid(row=3, column=2, sticky="w", pady=(6, 0))
+        self._install_placeholder(step_entry, self.window_step_var, "20")
+
+        ttk.Label(left_col, text="Start time (s)").grid(row=4, column=0, sticky="w", pady=(6, 0))
+        start_entry = ttk.Entry(left_col, textvariable=self.start_var, width=10)
+        start_entry.grid(row=4, column=1, sticky="w", padx=(6, 8), pady=(6, 0))
+        ttk.Label(
+            left_col,
+            text="Force a window start.",
+            font=self._font_small,
+        ).grid(row=4, column=2, sticky="w", pady=(6, 0))
+        self._install_placeholder(start_entry, self.start_var, "auto")
+
+        ttk.Checkbutton(
+            left_col, text="Auto-window", variable=self.auto_window_var
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Label(
+            left_col,
+            text="Consensus from multiple windows.",
+            font=self._font_small,
+        ).grid(row=5, column=2, sticky="w", pady=(8, 0))
+
+        ttk.Checkbutton(
+            left_col, text="Auto window size", variable=self.auto_window_size_var
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Label(
+            left_col,
+            text="Auto-pick window length.",
+            font=self._font_small,
+        ).grid(row=6, column=2, sticky="w", pady=(6, 0))
+
+        ttk.Label(right_col, text="Filtering", font=header_font).grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 6)
+        )
+
+        ttk.Label(right_col, text="Resample rate (Hz)").grid(row=1, column=0, sticky="w")
+        fs_entry = ttk.Entry(right_col, textvariable=self.fs_var, width=10)
+        fs_entry.grid(row=1, column=1, sticky="w", padx=(6, 8))
+        ttk.Label(
+            right_col,
+            text="Target sample rate.",
+            font=self._font_small,
+        ).grid(row=1, column=2, sticky="w")
+        self._install_placeholder(fs_entry, self.fs_var, "50")
+
+        ttk.Label(right_col, text="Lowpass (Hz)").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        lowpass_entry = ttk.Entry(right_col, textvariable=self.lowpass_var, width=10)
+        lowpass_entry.grid(row=2, column=1, sticky="w", padx=(6, 8), pady=(6, 0))
+        ttk.Label(
+            right_col,
+            text="Reduce fast noise.",
+            font=self._font_small,
+        ).grid(row=2, column=2, sticky="w", pady=(6, 0))
+        self._install_placeholder(lowpass_entry, self.lowpass_var, "8")
+
+        ttk.Label(right_col, text="Highpass (Hz)").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        highpass_entry = ttk.Entry(right_col, textvariable=self.highpass_var, width=10)
+        highpass_entry.grid(row=3, column=1, sticky="w", padx=(6, 8), pady=(6, 0))
+        ttk.Label(
+            right_col,
+            text="Remove slow drift.",
+            font=self._font_small,
+        ).grid(row=3, column=2, sticky="w", pady=(6, 0))
+        self._install_placeholder(highpass_entry, self.highpass_var, "0.2")
+
+        right_col.rowconfigure(4, minsize=4)
+
+        footer = ttk.Frame(options)
+        footer.grid(row=1, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        self.reset_button = ttk.Button(footer, text="Reset Options", command=self._reset_options)
+        self.reset_button.grid(row=0, column=0, sticky="e")
+
+        self.root.after(0, self._sync_io_notebook_height)
+
+    def _sync_io_notebook_height(self, event: tk.Event | None = None) -> None:
+        if self._io_notebook is None:
+            return
+        try:
+            self._io_notebook.update_idletasks()
+            selected = self._io_notebook.select()
+            if not selected:
+                return
+            tab_widget = self.root.nametowidget(selected)
+            req = tab_widget.winfo_reqheight()
+            if req > 0:
+                self._io_notebook.configure(height=req)
+            container_w = self._io_notebook.master.winfo_width()
+            if container_w and container_w > 1:
+                self._io_notebook.configure(width=container_w)
+            # Prevent auto-focusing the first entry when switching tabs.
+            try:
+                self._io_notebook.focus_set()
+            except Exception:
+                pass
+        except Exception:
+            return
+
+    def _install_placeholder(
+        self, entry: ttk.Entry, var: tk.StringVar, placeholder: str
+    ) -> None:
+        key = self._var_key(var)
+        self._placeholder_text[key] = placeholder
+        self._placeholder_active[key] = False
+        try:
+            fg = entry.cget("foreground") or ""
+        except Exception:
+            fg = ""
+        self._placeholder_fg[key] = fg
+
+        def _activate_placeholder() -> None:
+            if var.get().strip():
+                return
+            try:
+                entry.configure(foreground="#6f6f6f")
+            except Exception:
+                pass
+            var.set(placeholder)
+            self._placeholder_active[key] = True
+
+        def _clear_placeholder() -> None:
+            if not self._placeholder_active.get(key, False):
+                return
+            var.set("")
+            try:
+                entry.configure(foreground=self._placeholder_fg.get(key, ""))
+            except Exception:
+                pass
+            self._placeholder_active[key] = False
+
+        entry.bind("<FocusIn>", lambda _event: _clear_placeholder())
+        entry.bind("<FocusOut>", lambda _event: _activate_placeholder())
+        self._placeholder_activate[key] = _activate_placeholder
+        _activate_placeholder()
+
+    def _var_key(self, var: tk.StringVar) -> int:
+        return id(var)
+
+    def _read_field(self, var: tk.StringVar) -> str:
+        if self._placeholder_active.get(self._var_key(var), False):
+            return ""
+        return var.get().strip()
+
+    def _reset_options(self) -> None:
+        for var in (
+            self.window_var,
+            self.max_lag_var,
+            self.window_step_var,
+            self.start_var,
+            self.fs_var,
+            self.lowpass_var,
+            self.highpass_var,
+        ):
+            var.set("")
+            activate = self._placeholder_activate.get(self._var_key(var))
+            if activate is not None:
+                activate()
+        self.auto_window_var.set(True)
+        self.auto_window_size_var.set(True)
 
     def _build_results_panel(self, parent: ttk.Frame, row: int) -> None:
         frame = ttk.Labelframe(parent, text="Alignment Results", padding=12)
@@ -415,7 +665,11 @@ class _GuiApp:
         diag.columnconfigure(2, weight=0)
         diag.columnconfigure(3, weight=0)
         diag.columnconfigure(4, weight=0)
-        diag.columnconfigure(5, weight=1)
+        diag.columnconfigure(5, weight=0)
+        diag.columnconfigure(6, weight=0)
+        diag.columnconfigure(7, weight=0)
+        diag.columnconfigure(8, weight=0)
+        diag.columnconfigure(9, weight=1)
 
         ttk.Label(diag, text="Confidence:").grid(row=0, column=0, sticky="w")
         self.confidence_value = ttk.Label(diag, textvariable=self.confidence_var)
@@ -431,9 +685,14 @@ class _GuiApp:
             row=0, column=5, sticky="w", padx=(4, 12)
         )
 
-        ttk.Label(diag, text="Signal:").grid(row=0, column=6, sticky="w")
+        ttk.Label(diag, text="Stability (s):").grid(row=0, column=6, sticky="w")
+        ttk.Label(diag, textvariable=self.stability_var).grid(
+            row=0, column=7, sticky="w", padx=(4, 12)
+        )
+
+        ttk.Label(diag, text="Signal:").grid(row=0, column=8, sticky="w")
         ttk.Label(diag, textvariable=self.signal_var).grid(
-            row=0, column=7, sticky="w", padx=(4, 0)
+            row=0, column=9, sticky="w", padx=(4, 0)
         )
 
         plot_frame = ttk.Frame(frame)
@@ -637,6 +896,16 @@ class _GuiApp:
         self._running = running
         self.run_button.configure(state="disabled" if running else "normal")
         self.status_var.set("Running..." if running else "Ready")
+        if self.status_bar is not None:
+            try:
+                if running:
+                    self.status_bar.grid()
+                    self.status_bar.start(12)
+                else:
+                    self.status_bar.stop()
+                    self.status_bar.grid_remove()
+            except Exception:
+                pass
 
     def _show_about(self) -> None:
         message = "\n".join(
@@ -807,6 +1076,66 @@ class _GuiApp:
             return
         video, log = resolved
 
+        def _parse_float_field(label: str, var: tk.StringVar) -> tuple[float | None, bool, bool]:
+            raw = self._read_field(var)
+            if not raw:
+                return None, True, True
+            try:
+                return float(raw), False, True
+            except ValueError:
+                self._set_error(f"Invalid {label} value.", [f"'{raw}' is not a number."])
+                return None, True, False
+
+        window_val, window_is_default, ok = _parse_float_field("window", self.window_var)
+        if not ok:
+            return
+        max_lag_val, max_lag_is_default, ok = _parse_float_field("max lag", self.max_lag_var)
+        if not ok:
+            return
+        step_val, step_is_default, ok = _parse_float_field(
+            "window step", self.window_step_var
+        )
+        if not ok:
+            return
+        start_val, start_is_default, ok = _parse_float_field("start time", self.start_var)
+        if not ok:
+            return
+        if start_is_default:
+            start_val = None
+
+        fs_val, fs_is_default, ok = _parse_float_field("resample rate", self.fs_var)
+        if not ok:
+            return
+        lowpass_val, lowpass_is_default, ok = _parse_float_field(
+            "lowpass", self.lowpass_var
+        )
+        if not ok:
+            return
+        highpass_val, highpass_is_default, ok = _parse_float_field(
+            "highpass", self.highpass_var
+        )
+        if not ok:
+            return
+
+        defaults = analysis.SyncOptions()
+        options = analysis.SyncOptions(
+            window=window_val if window_val is not None else defaults.window,
+            max_lag=max_lag_val if max_lag_val is not None else defaults.max_lag,
+            window_step=step_val if step_val is not None else defaults.window_step,
+            start=start_val,
+            auto_window=bool(self.auto_window_var.get()),
+            auto_window_size=bool(self.auto_window_size_var.get()),
+            fs=fs_val if fs_val is not None else defaults.fs,
+            lowpass_hz=lowpass_val if lowpass_val is not None else defaults.lowpass_hz,
+            highpass_hz=highpass_val if highpass_val is not None else defaults.highpass_hz,
+            window_is_default=window_is_default,
+            window_step_is_default=step_is_default,
+            max_lag_is_default=max_lag_is_default,
+            fs_is_default=fs_is_default,
+            lowpass_is_default=lowpass_is_default,
+            highpass_is_default=highpass_is_default,
+        )
+
         self._clear_error()
         self._clear_results()
         self._set_running(True)
@@ -822,7 +1151,6 @@ class _GuiApp:
                     line = f"{line}\n"
                 writer.write(line)
 
-            options = analysis.SyncOptions()
             try:
                 with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
                     result = analysis.run_sync(video, log, options=options, emit=emit)
@@ -850,15 +1178,42 @@ class _GuiApp:
                     else:
                         self._handle_error(self._last_error)
                 else:
-                    self._append_output(str(item))
+                    text = str(item)
+                    self._append_output(text)
+                    self._update_stage(text)
         except queue.Empty:
             pass
         self.root.after(75, self._poll_output)
+
+    def _update_stage(self, message: str) -> None:
+        if not self._running:
+            return
+        line = message.strip()
+        if not line:
+            return
+        lower = line.lower()
+        if "resolving input files" in lower:
+            self.status_var.set("Resolving inputs")
+            return
+        if lower.startswith("loading log"):
+            self.status_var.set("Loading log")
+            return
+        if "loading video imu" in lower:
+            self.status_var.set("Loading video IMU")
+            return
+        if "computing correlation metrics for signal" in lower:
+            parts = line.split(":", 1)
+            signal = parts[1].strip() if len(parts) > 1 else "signal"
+            self.status_var.set(f"Correlating {signal}")
+            return
+        if "signal candidates" in lower or "sync summary" in lower:
+            self.status_var.set("Finalizing")
 
     def _apply_result(self, result: analysis.SyncResult) -> None:
         self.confidence_var.set(result.diagnostics.confidence_label)
         self.correlation_var.set(f"{result.diagnostics.correlation_peak:.3f}")
         self.psr_var.set(f"{result.diagnostics.psr:.3f}")
+        self.stability_var.set(f"{result.diagnostics.stability:.3f}")
         self.signal_var.set(str(result.diagnostics.signal))
         self._apply_confidence_style(result.diagnostics.confidence_label)
 
@@ -920,13 +1275,13 @@ class _GuiApp:
         time_rel = log_time - log_origin
         video_time_aligned = video_time + float(result.plot.lag_seconds)
         video_time_rel = video_time_aligned - log_origin
-        log_y = result.plot.log_y
-        video_y = result.plot.video_y
+        plot_log_y = result.plot.log_y
+        plot_video_y = result.plot.video_y
         try:
             import numpy as np
 
-            log_arr = np.asarray(log_y, dtype=float)
-            video_arr = np.asarray(video_y, dtype=float)
+            log_arr = np.asarray(plot_log_y, dtype=float)
+            video_arr = np.asarray(plot_video_y, dtype=float)
 
             def smooth_series(values: np.ndarray, window: int = 9) -> np.ndarray:
                 if values.size == 0 or window <= 1:
@@ -938,42 +1293,47 @@ class _GuiApp:
             scale = float(np.percentile(combined, 90)) if combined.size else 1.0
             if not np.isfinite(scale) or scale <= 0:
                 scale = 1.0
-            log_y = np.arcsinh(log_arr / scale)
-            video_y = np.arcsinh(video_arr / scale)
+            # Display-only compression/smoothing (does not affect correlation).
+            plot_log_y = np.arcsinh(log_arr / scale)
+            plot_video_y = np.arcsinh(video_arr / scale)
 
-            log_y = smooth_series(log_y, window=9)
-            video_y = smooth_series(video_y, window=9)
+            plot_log_y = smooth_series(plot_log_y, window=9)
+            plot_video_y = smooth_series(plot_video_y, window=9)
         except Exception:
-            log_y = result.plot.log_y
-            video_y = result.plot.video_y
+            plot_log_y = result.plot.log_y
+            plot_video_y = result.plot.video_y
 
         ax1.plot(
             time_rel,
-            log_y,
+            plot_log_y,
             label="Telemetry",
             linewidth=0.8,
             color="#F2994A",
         )
         ax1.plot(
             video_time_rel,
-            video_y,
+            plot_video_y,
             label="Video IMU",
             linewidth=0.8,
             color="#2D9CDB",
             alpha=0.85,
         )
-        ax1.set_xlabel("Time (s)", labelpad=6, loc="right")
+        ax1.set_xlabel("")
+        ax1.set_xticks([])
         ax1.set_yticks([])
         ax1.set_ylabel("")
+        for spine in ax1.spines.values():
+            spine.set_visible(False)
         ax1.margins(x=0, y=0.15)
         ax1.legend(
-            loc="lower right",
+            loc="upper right",
             ncol=2,
             frameon=False,
             handlelength=1.2,
             handletextpad=0.4,
             columnspacing=1.0,
             borderaxespad=0.2,
+            bbox_to_anchor=(1.0, 0.0),
         )
         self._update_plot_theme()
         if self._plot_fig is not None:
@@ -1056,6 +1416,7 @@ class _GuiApp:
         self.confidence_var.set("--")
         self.correlation_var.set("--")
         self.psr_var.set("--")
+        self.stability_var.set("--")
         self.signal_var.set("--")
         self.seconds_var.set("--")
         self.frames_var.set("--")
