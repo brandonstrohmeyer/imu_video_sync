@@ -1,32 +1,28 @@
 ﻿# imu-video-sync
 
-IMUVideoSync is a tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. It accurately estimates the time offset by comparing motion patterns and prints an offset instruction that can be used by your video editor of choice including RaceRender.
-
-
-## Supported Devices
-
-**Cameras**
-- GoPro HERO5+
-- DJI Osmo Action 4+
-- DJI Nano
-
-**Loggers**
-- AiM
-- RaceBox
-- RaceChrono
-
-To request support for a new device, please [open an issue](https://github.com/brandonstrohmeyer/imu_video_sync/issues/new?template=new-device-support.yml).
+IMUVideoSync is a tool that time-syncs a telemetry log (CSV) to a camera video (MP4) using IMU cross-correlation. It estimates the time offset by comparing motion patterns and outputs multiple offset formats for use in tools like RaceRender. A full CLI is still included for automation.
 
 ## Installation
 1. Go to the GitHub [Releases](https://github.com/brandonstrohmeyer/imu_video_sync/releases) page.
 2. Download the binary for your OS:
-   - Windows (GUI): `IMUVideoSync-windows-x64.exe`
+   - Windows: `IMUVideoSync-windows-x64.exe`
    - Windows (CLI): `IMUVideoSync-cli-windows-x64.exe`
    - macOS: `IMUVideoSync-macos-universal2` (or `IMUVideoSync-macos-x64`)
    - Linux: `IMUVideoSync-linux-x64`
 3. Run the binary from a terminal, or double-click it on Windows/macOS to launch the GUI.
 
-## Usage
+## GUI (Windows and macOS)
+The Windows and macOS builds include the full GUI experience. Double-click the binary to launch the GUI. If you run the binary from a terminal, it stays in CLI mode.
+
+![IMUVideoSync GUI screenshot](assets/docs/imu-screenshot.png)
+
+The GUI lets you pick:
+- Video file (MP4)
+- Log file (CSV)
+
+Then click **Analyze & Sync** to run the same processing as the CLI and view the results in the window.
+
+## Usage (CLI)
 
 Basic example:
 ```
@@ -50,7 +46,7 @@ Video offset within project     00:00:24.540
 ```
 
 ### JSON Output
-Use `--json` to emit a machine-readable offset summary to stdout. All human-readable output is redirected to stderr, and update checks are skipped.
+Use `--json` to emit a machine-readable offset summary to stdout.
 
 ```
 IMUVideoSync --video session.mp4 --log aim.csv --json
@@ -62,17 +58,6 @@ Example JSON:
 ```
 {"lag_frames":"+1471","lag_seconds":"+24.540","timecode_offset":"+00:00:24;32","video_offset":"00:00:24.540"}
 ```
-
-## GUI (Windows and macOS)
-The Windows and macOS builds include a minimal GUI. Double-click the binary to launch the GUI. If you run the binary from a terminal, it stays in CLI mode.
-
-![IMUVideoSync GUI screenshot](assets/docs/imu-screenshot.png)
-
-The GUI lets you pick:
-- Video file (MP4)
-- Log file (CSV)
-
-Then click **Generate Offset** to run the same processing as the CLI and view the output in the window.
 
 ## Outputs
 - **Signal Candidates** table (includes the selected signal).
@@ -86,8 +71,8 @@ Then click **Generate Offset** to run the same processing as the CLI and view th
   - `Lag (seconds)`: estimated offset in seconds.
   - `Lag (frames)`: offset in frames (when FPS is known).
   - `Timecode offset`: SMPTE timecode offset (when FPS is known).
-  - `Video offset within project: HH:MM:SS.mmm` when video starts later than data.
-  - `Data offset within project: HH:MM:SS.mmm` when data starts later than video.
+  - `Video offset: HH:MM:SS.mmm` when video starts later than data.
+  - `Data offset: HH:MM:SS.mmm` when data starts later than video.
 
 **Outputs (Files)**
 - `video_imu.csv` if `--write-video-imu-csv`
@@ -97,6 +82,20 @@ Then click **Generate Offset** to run the same processing as the CLI and view th
   - Log CSV with timestamps shifted by the computed lag.
 - `sync_plot.png` if `--plot`
   - Visual diagnostics: signals, correlation curve, and difference signal.
+  
+## Supported Devices
+
+**Cameras**
+- GoPro HERO5+
+- DJI Osmo Action 4+
+- DJI Nano
+
+**Loggers**
+- AiM
+- RaceBox
+- RaceChrono
+
+To request support for a new device, please [open an issue](https://github.com/brandonstrohmeyer/imu_video_sync/issues/new?template=new-device-support.yml).
 
 ## How It Works
 1. Extract video IMU (gyro/accel) from MP4 using `telemetry-parser` and normalize timestamps to start at 0.0 seconds.
