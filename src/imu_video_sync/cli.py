@@ -35,7 +35,7 @@ def _parse_cols(value: Optional[str]) -> Optional[List[str]]:
 def _maybe_print_update_notice() -> None:
     if update_check.is_disabled():
         return
-    result = update_check.check_for_updates(include_prereleases=True, timeout_s=2.5)
+        result = update_check.check_for_updates(include_prereleases=False, timeout_s=2.5)
     if result and result.update_available:
         print(update_check.format_update_notice(result), file=sys.stderr)
 

@@ -962,7 +962,7 @@ class _GuiApp:
         self._update_inflight = True
 
         def worker() -> None:
-            result = update_check.check_for_updates(include_prereleases=True, timeout_s=2.5)
+            result = update_check.check_for_updates(include_prereleases=manual, timeout_s=2.5)
             self.root.after(0, lambda: self._handle_update_result(result, manual))
 
         threading.Thread(target=worker, daemon=True).start()
