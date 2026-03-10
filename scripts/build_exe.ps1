@@ -1,5 +1,6 @@
 param(
     [string]$PythonExe = ".venv312\\Scripts\\python.exe",
+    [string]$Version,
     [switch]$Offline,
     [string]$WheelDir = "vendor\\wheels",
     [string]$Requirements = "requirements-build.txt",
@@ -12,7 +13,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
 $timestamp = Get-Date -Format "yyyyMMddHHmm"
-$version = "v0.0.0-$timestamp"
+$version = if ($Version -and $Version.Trim().Length -gt 0) { $Version.Trim() } else { "v0.0.0-$timestamp" }
 $versionFile = Join-Path $repoRoot "src\\imu_video_sync\\_version.py"
 $versionContent = "__version__ = `"$version`"`n"
 Set-Content -Path $versionFile -Value $versionContent -Encoding UTF8

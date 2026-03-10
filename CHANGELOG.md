@@ -9,9 +9,6 @@
 - GUI is less ugly
 - CLI and GUI have been decoupled for Windows
 
-**Changed**
-- GUI is less ugly
-
 ## v0.3.0
 **Added**
 - Camera

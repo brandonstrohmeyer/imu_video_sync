@@ -35,7 +35,7 @@ def _parse_cols(value: Optional[str]) -> Optional[List[str]]:
 def _maybe_print_update_notice() -> None:
     if update_check.is_disabled():
         return
-    result = update_check.check_for_updates(include_prereleases=True, timeout_s=2.5)
+        result = update_check.check_for_updates(include_prereleases=False, timeout_s=2.5)
     if result and result.update_available:
         print(update_check.format_update_notice(result), file=sys.stderr)
 
@@ -90,6 +90,10 @@ def _format_rate(rate: float) -> str:
     if np.isnan(rate):
         return "unknown"
     return f"{rate:.2f} Hz"
+
+
+def _format_signal_list(signals: List[str]) -> str:
+    return ", ".join(signals) if signals else "none"
 
 
 def _safe_duration(time_s: np.ndarray) -> float:
@@ -1236,6 +1240,8 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "Confidence",
                 f"{result.diagnostics.confidence_label} ({result.diagnostics.confidence_score:.0f}/100)",
             ),
+            ("Available signals", _format_signal_list(result.available_signals)),
+            ("Evaluated signals", _format_signal_list(result.selected_signals)),
         ]
         if args.show_drift:
             if result.drift_info and result.drift_info.get("reliable"):

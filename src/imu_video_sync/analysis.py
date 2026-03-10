@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Iterable, List, Optional, Sequence
 
 import numpy as np
 
@@ -111,6 +111,10 @@ class SyncResult:
     video_fps: Optional[float]
     drift_info: Optional[dict]
     post_summary_warnings: List[str] = field(default_factory=list)
+    available_signals: List[str] = field(default_factory=list)
+    selected_signals: List[str] = field(default_factory=list)
+    log_signals: List[str] = field(default_factory=list)
+    video_signals: List[str] = field(default_factory=list)
 
 
 def _emit(emit: Optional[EmitFn], message: str) -> None:
@@ -152,6 +156,17 @@ def _format_rate(rate: float) -> str:
     if np.isnan(rate):
         return "unknown"
     return f"{rate:.2f} Hz"
+
+
+def _sort_signals(signals: Iterable[str]) -> List[str]:
+    return sorted(
+        signals,
+        key=lambda s: SIGNAL_PRIORITY.index(s) if s in SIGNAL_PRIORITY else 99,
+    )
+
+
+def _format_signal_list(signals: Sequence[str]) -> str:
+    return ", ".join(signals) if signals else "none"
 
 
 def _safe_duration(time_s: np.ndarray) -> float:
@@ -326,7 +341,7 @@ def _confidence_score(peak: float, psr: float, stability: float) -> float:
         stability_score = float(np.clip(1.0 - (stability / 0.3), 0.0, 1.0))
     else:
         stability_score = 0.5
-    return 100.0 * (0.5 * peak_score + 0.3 * psr_score + 0.2 * stability_score)
+    return 100.0 * (0.4 * peak_score + 0.4 * psr_score + 0.2 * stability_score)
 
 
 def _confidence_rating(score: float) -> str:
@@ -1051,10 +1066,12 @@ def run_sync(
     )
     video = video_source.load(video_path_resolved, **video_opts)
 
-    available = sorted(
-        available_signals(log.imu) & available_signals(video),
-        key=lambda s: SIGNAL_PRIORITY.index(s) if s in SIGNAL_PRIORITY else 99,
-    )
+    log_signals = _sort_signals(available_signals(log.imu))
+    video_signals = _sort_signals(available_signals(video))
+    available = _sort_signals(set(log_signals) & set(video_signals))
+    _emit(emit, f"Available signals (log): {_format_signal_list(log_signals)}")
+    _emit(emit, f"Available signals (video): {_format_signal_list(video_signals)}")
+    _emit(emit, f"Compatible signals: {_format_signal_list(available)}")
     if not available:
         raise ValueError("No compatible signals found between log and video data.")
 
@@ -1076,6 +1093,7 @@ def run_sync(
         if warning:
             _emit(emit, f"Warning: {warning}")
         selected_signals = [signal]
+    _emit(emit, f"Selected signals for evaluation: {_format_signal_list(selected_signals)}")
 
     if options.fs_is_default:
         log_rate = infer_sample_rate(np.asarray(log.time_s, dtype=float))
@@ -1269,6 +1287,10 @@ def run_sync(
         video_fps=video_fps,
         drift_info=drift_info,
         post_summary_warnings=post_warnings,
+        available_signals=list(available),
+        selected_signals=list(selected_signals),
+        log_signals=list(log_signals),
+        video_signals=list(video_signals),
     )
 
 
