@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "v*.*.*-rc.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -20,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    name: Build (${{ matrix.platform }} / ${{ matrix.artifact_name }})
     runs-on: ${{ matrix.os }}
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     outputs:
@@ -80,7 +82,7 @@ jobs:
               if not sha:
                   sys.exit("Missing workflow_run head sha")
               tags = subprocess.check_output(["git", "tag", "--points-at", sha], text=True).splitlines()
-              tags = [t for t in tags if re.match(r"^v\d+\.\d+\.\d+$", t)]
+              tags = [t for t in tags if re.match(r"^v\d+\.\d+\.\d+(-rc\.\d+)?$", t)]
               tag = tags[0] if tags else None
 
           if not tag:
@@ -88,7 +90,7 @@ jobs:
 
           tag = tag.replace("\\n", "").replace("\\r", "")
           tag = tag.replace("\n", "").replace("\r", "").strip()
-          if not re.match(r"^v\d+\.\d+\.\d+$", tag):
+          if not re.match(r"^v\d+\.\d+\.\d+(-rc\.\d+)?$", tag):
               sys.exit(f"Resolved tag is invalid: {tag!r}")
           print("Resolved tag:", tag)
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
@@ -139,16 +141,22 @@ jobs:
 
       - name: Build binary (Windows)
         if: matrix.platform == 'windows'
-        run: >
-          python -m PyInstaller --noconfirm --onefile --noconsole --exclude-module scipy --name IMUVideoSync
-          --icon assets/icon/IMUVideoSync.ico
-          --paths src
-          --add-data="assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon"
-          --add-data="assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon"
-          --collect-binaries telemetry_parser
-          --collect-data telemetry_parser
-          --collect-submodules telemetry_parser
-          scripts/imu_video_sync_entry.py
+        shell: pwsh
+        run: |
+          $base = @(
+            "--noconfirm"
+            "--onefile"
+            "--exclude-module", "scipy"
+            "--icon", "assets/icon/IMUVideoSync.ico"
+            "--paths", "src"
+            "--add-data", "assets/icon/IMUVideoSync.ico${{ matrix.data_sep }}assets/icon"
+            "--add-data", "assets/icon/IMUVideoSync.png${{ matrix.data_sep }}assets/icon"
+            "--collect-binaries", "telemetry_parser"
+            "--collect-data", "telemetry_parser"
+            "--collect-submodules", "telemetry_parser"
+          )
+          python -m PyInstaller @base "--noconsole" "--name" "IMUVideoSync" "scripts/imu_video_sync_gui_entry.py"
+          python -m PyInstaller @base "--name" "IMUVideoSync-cli" "--exclude-module" "tkinter" "--exclude-module" "ttkbootstrap" "scripts/imu_video_sync_cli_entry.py"
 
       - name: Build binary (macOS)
         if: matrix.platform == 'macos'
@@ -182,6 +190,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
           Move-Item -Force dist\IMUVideoSync.exe release\IMUVideoSync-windows-x64.exe
+          Move-Item -Force dist\IMUVideoSync-cli.exe release\IMUVideoSync-cli-windows-x64.exe
 
       - name: Prepare artifact (macOS)
         if: matrix.platform == 'macos'
@@ -202,6 +211,7 @@ jobs:
           path: release/*
 
   macos-universal2:
+    name: Build (macos-universal2)
     runs-on: macos-14
     needs:
       - build
@@ -234,11 +244,33 @@ jobs:
           path: release/*
 
   publish:
+    name: Publish Release
     runs-on: ubuntu-latest
     needs:
       - build
       - macos-universal2
     steps:
+      - name: Normalize release tag
+        id: publish_tag
+        shell: bash
+        env:
+          RAW_TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import sys
+
+          tag = os.environ.get("RAW_TAG", "")
+          tag = tag.replace("\\n", "").replace("\\r", "")
+          tag = tag.replace("\n", "").replace("\r", "").strip()
+          if not re.match(r"^v\d+\.\d+\.\d+(-rc\.\d+)?$", tag):
+              sys.exit(f"Normalized tag is invalid: {tag!r}")
+          print("Normalized tag:", tag)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"tag={tag}\n")
+          PY
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -247,8 +279,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: ${{ needs.build.outputs.tag }}
+          tag_name: ${{ steps.publish_tag.outputs.tag }}
+          name: ${{ steps.publish_tag.outputs.tag }}
           files: release-artifacts/**/*
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(steps.publish_tag.outputs.tag, '-rc.') }}

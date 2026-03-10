@@ -1,5 +1,6 @@
 param(
     [string]$PythonExe = ".venv312\\Scripts\\python.exe",
+    [string]$Version,
     [switch]$Offline,
     [string]$WheelDir = "vendor\\wheels",
     [string]$Requirements = "requirements-build.txt",
@@ -11,12 +12,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
-$version = "dev"
-try {
-    $version = (git describe --tags --abbrev=0).Trim()
-} catch {
-    $version = "dev"
-}
+$timestamp = Get-Date -Format "yyyyMMddHHmm"
+$version = if ($Version -and $Version.Trim().Length -gt 0) { $Version.Trim() } else { "v0.0.0-$timestamp" }
 $versionFile = Join-Path $repoRoot "src\\imu_video_sync\\_version.py"
 $versionContent = "__version__ = `"$version`"`n"
 Set-Content -Path $versionFile -Value $versionContent -Encoding UTF8
@@ -76,30 +73,54 @@ if ($skippedCount -gt 0) {
     throw "Pytest reported $skippedCount skipped test(s). Failing build."
 }
 
-Write-Host "Building IMUVideoSync.exe..."
-$pyinstallerArgs = @(
+Write-Host "Building IMUVideoSync.exe (GUI)..."
+$pyinstallerBase = @(
     "--noconfirm",
     "--onefile",
-    "--noconsole",
     "--exclude-module", "scipy",
     "--icon", "assets\\icon\\IMUVideoSync.ico",
-    "--name", "IMUVideoSync",
     "--paths", "src",
     "--add-data", "assets\\icon\\IMUVideoSync.ico;assets\\icon",
     "--add-data", "assets\\icon\\IMUVideoSync.png;assets\\icon",
     "--collect-binaries", "telemetry_parser",
     "--collect-data", "telemetry_parser",
-    "--collect-submodules", "telemetry_parser",
-    "scripts\\imu_video_sync_entry.py"
+    "--collect-submodules", "telemetry_parser"
 )
 if ($Clean) {
-    $pyinstallerArgs = @("--clean") + $pyinstallerArgs
+    $pyinstallerBase = @("--clean") + $pyinstallerBase
 }
 
-if (Test-Path "dist\\IMUVideoSync") {
-    Write-Host "Removing stale dist\\IMUVideoSync folder..."
-    Remove-Item -Recurse -Force "dist\\IMUVideoSync"
+$distOutputs = @(
+    "dist\\IMUVideoSync.exe",
+    "dist\\IMUVideoSync-cli.exe",
+    "dist\\IMUVideoSync",
+    "dist\\IMUVideoSync-cli"
+)
+foreach ($path in $distOutputs) {
+    if (Test-Path $path) {
+        $item = Get-Item $path
+        if ($item.PSIsContainer) {
+            Remove-Item -Recurse -Force $path
+        } else {
+            Remove-Item -Force $path
+        }
+    }
 }
-& $venvPyInstaller @pyinstallerArgs
 
-Write-Host "Done. Output: dist\\IMUVideoSync.exe"
+$guiArgs = $pyinstallerBase + @(
+    "--noconsole",
+    "--name", "IMUVideoSync",
+    "scripts\\imu_video_sync_gui_entry.py"
+)
+& $venvPyInstaller @guiArgs
+
+Write-Host "Building IMUVideoSync-cli.exe (CLI)..."
+$cliArgs = $pyinstallerBase + @(
+    "--name", "IMUVideoSync-cli",
+    "--exclude-module", "tkinter",
+    "--exclude-module", "ttkbootstrap",
+    "scripts\\imu_video_sync_cli_entry.py"
+)
+& $venvPyInstaller @cliArgs
+
+Write-Host "Done. Outputs: dist\\IMUVideoSync.exe, dist\\IMUVideoSync-cli.exe"

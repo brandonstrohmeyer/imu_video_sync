@@ -1,0 +1,91 @@
+name: Tag RC on merge
+
+on:
+  pull_request:
+    branches:
+      - rc-*
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.merged == true }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Ensure release workflow supports RC tags
+        run: |
+          if [ ! -f .github/workflows/release.yml ]; then
+            echo "Missing .github/workflows/release.yml on this branch."
+            exit 1
+          fi
+          if ! grep -Fq "v*.*.*-rc.*" .github/workflows/release.yml; then
+            echo "release.yml does not include RC tag trigger (v*.*.*-rc.*)."
+            echo "Merge master into this rc branch to pick up release workflow changes."
+            exit 1
+          fi
+
+      - name: Ensure PAT available
+        run: |
+          if [ -z "${{ secrets.RELEASE_TAG_PAT }}" ]; then
+            echo "Missing RELEASE_TAG_PAT secret"
+            exit 1
+          fi
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read base version from CHANGELOG.md
+        id: changelog
+        run: |
+          BASE_TAG=$(python scripts/get_changelog_version.py | tr -d '\r\n')
+          echo "base_tag=$BASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next RC tag
+        id: rc_tag
+        env:
+          BASE_TAG: ${{ steps.changelog.outputs.base_tag }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+
+          base = os.environ["BASE_TAG"]
+          tags = subprocess.check_output(
+              ["git", "tag", "--list", f"{base}-rc.*"], text=True
+          ).splitlines()
+          pattern = re.compile(rf"^{re.escape(base)}-rc\.(\d+)$")
+          nums = [int(m.group(1)) for t in tags if (m := pattern.match(t))]
+          next_num = (max(nums) if nums else 0) + 1
+          tag = f"{base}-rc.{next_num}"
+          print(tag)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"tag={tag}\n")
+          PY
+
+      - name: Create tag if missing
+        run: |
+          TAG="${{ steps.rc_tag.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+            exit 0
+          fi
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          git remote set-url origin "https://x-access-token:${{ secrets.RELEASE_TAG_PAT }}@github.com/${{ github.repository }}.git"
+          git tag "$TAG"
+          git push origin "$TAG"

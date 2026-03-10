@@ -78,3 +78,7 @@ This file is the source of truth for how tests are organized and extended in thi
 ## When To Add Device-Specific Tests
 - Only if the device has unique parsing logic or a documented regression.
 - The test must explain why it cannot be covered by the manifest-driven suite.
+
+## CLI JSON Output
+- `tests/test_cli_json.py` validates the `--json` offset summary payload formatting.
+- Cover positive/negative lag and missing FPS cases (null `lag_frames` and `timecode_offset`).
